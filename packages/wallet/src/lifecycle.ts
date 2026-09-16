@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { and, eq, inArray } from "drizzle-orm";
 import type { PostJournalInput, TradeSharkDatabase } from "@tradeshark/database";
-import { ledgerAccounts, postJournal } from "@tradeshark/database";
+import { deposits, ledgerAccounts, postJournal, withdrawals } from "@tradeshark/database";
 
 export const fundingLifecycleStates = [
   "pending",
@@ -70,6 +70,12 @@ function assertPositiveAmount(amount: string): void {
   }
 }
 
+function assertFailureReason(to: FundingLifecycleState | WithdrawalLifecycleState, failureReason?: string): void {
+  if ((to === "failed" || to === "reversed") && !failureReason?.trim()) {
+    throw new Error(`A failure reason is required when transitioning to ${to}`);
+  }
+}
+
 type FundingAccountPair = {
   pendingDepositAccountId: string;
   userAvailableAccountId: string;
@@ -109,6 +115,96 @@ async function assertFundingAccounts(
   ) {
     throw new Error("Funding ledger accounts must belong to the same user and asset");
   }
+}
+
+export type TransitionDepositInput = {
+  depositId: string;
+  from: FundingLifecycleState;
+  to: FundingLifecycleState;
+  failureReason?: string;
+};
+
+/**
+ * Persists a deposit lifecycle transition with optimistic concurrency control.
+ * The status in the UPDATE predicate prevents two workers from applying the
+ * same transition concurrently. Callers should pass the state they observed.
+ */
+export async function transitionDeposit(
+  db: TradeSharkDatabase,
+  input: TransitionDepositInput
+): Promise<{ depositId: string; status: FundingLifecycleState }> {
+  if (!canTransitionFunding(input.from, input.to)) {
+    throw new Error(`Invalid deposit lifecycle transition: ${input.from} -> ${input.to}`);
+  }
+  assertFailureReason(input.to, input.failureReason);
+
+  const now = new Date();
+  const result = await db
+    .update(deposits)
+    .set({
+      status: input.to,
+      updatedAt: now,
+      ...(input.to === "confirmed" ? { confirmedAt: now } : {}),
+      ...(input.to === "credited" ? { creditedAt: now } : {}),
+      ...(input.to === "failed" || input.to === "reversed"
+        ? { failureReason: input.failureReason?.trim() }
+        : {})
+    })
+    .where(and(eq(deposits.id, input.depositId), eq(deposits.status, input.from)))
+    .returning({ id: deposits.id });
+
+  if (result.length !== 1) {
+    throw new Error(
+      `Deposit lifecycle transition was rejected because the deposit was missing or no longer in ${input.from}`
+    );
+  }
+
+  return { depositId: result[0]!.id, status: input.to };
+}
+
+export type TransitionWithdrawalInput = {
+  withdrawalId: string;
+  from: WithdrawalLifecycleState;
+  to: WithdrawalLifecycleState;
+  failureReason?: string;
+};
+
+/**
+ * Persists a withdrawal lifecycle transition with optimistic concurrency control.
+ * Timestamps are written by the transition itself so state and audit timing
+ * cannot depend on application-side defaults.
+ */
+export async function transitionWithdrawal(
+  db: TradeSharkDatabase,
+  input: TransitionWithdrawalInput
+): Promise<{ withdrawalId: string; status: WithdrawalLifecycleState }> {
+  if (!canTransitionWithdrawal(input.from, input.to)) {
+    throw new Error(`Invalid withdrawal lifecycle transition: ${input.from} -> ${input.to}`);
+  }
+  assertFailureReason(input.to, input.failureReason);
+
+  const now = new Date();
+  const result = await db
+    .update(withdrawals)
+    .set({
+      status: input.to,
+      updatedAt: now,
+      ...(input.to === "submitted" ? { submittedAt: now } : {}),
+      ...(input.to === "confirmed" ? { confirmedAt: now } : {}),
+      ...(input.to === "failed" || input.to === "reversed"
+        ? { failureReason: input.failureReason?.trim() }
+        : {})
+    })
+    .where(and(eq(withdrawals.id, input.withdrawalId), eq(withdrawals.status, input.from)))
+    .returning({ id: withdrawals.id });
+
+  if (result.length !== 1) {
+    throw new Error(
+      `Withdrawal lifecycle transition was rejected because the withdrawal was missing or no longer in ${input.from}`
+    );
+  }
+
+  return { withdrawalId: result[0]!.id, status: input.to };
 }
 
 export type CreditConfirmedDepositInput = {
