@@ -8,6 +8,7 @@ import {
   postJournal
 } from "@tradeshark/database";
 
+export * from "./deposit.js";
 export * from "./funding.js";
 export * from "./lifecycle.js";
 
@@ -70,13 +71,6 @@ export type MoveWalletBalanceInput = {
   metadata?: Record<string, unknown>;
 };
 
-/**
- * Moves a customer's asset between wallet sub-accounts using the ledger.
- *
- * For example, available -> locked is debit USER_AVAILABLE / credit USER_LOCKED.
- * The ledger's row-level balance condition makes insufficient available funds
- * fail atomically with the journal transaction.
- */
 export async function moveWalletBalance(
   db: TradeSharkDatabase,
   input: MoveWalletBalanceInput
