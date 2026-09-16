@@ -6,7 +6,7 @@ import { idempotencyKeys, journalEntries, journalTransactions } from "./schema/i
 const SCALE = 18n;
 const TEN_TO_SCALE = 10n ** SCALE;
 
-type LedgerPosting = {
+export type LedgerPosting = {
   accountId: string;
   direction: "debit" | "credit";
   amount: string;
@@ -35,6 +35,30 @@ function toScaledInteger(value: string): bigint {
   return BigInt(whole) * TEN_TO_SCALE + BigInt(fraction.padEnd(Number(SCALE), "0") || "0");
 }
 
+/** Validate the core double-entry invariant before persistence. */
+export function validateJournalEntries(entries: LedgerPosting[]): void {
+  if (entries.length < 2) {
+    throw new Error("A journal transaction requires at least two postings");
+  }
+
+  let debitTotal = 0n;
+  let creditTotal = 0n;
+
+  for (const entry of entries) {
+    const amount = toScaledInteger(entry.amount);
+    if (amount <= 0n) {
+      throw new Error("Journal posting amounts must be positive");
+    }
+
+    if (entry.direction === "debit") debitTotal += amount;
+    else creditTotal += amount;
+  }
+
+  if (debitTotal <= 0n || creditTotal <= 0n || debitTotal !== creditTotal) {
+    throw new Error("Unbalanced journal transaction: debits must equal credits and both must be positive");
+  }
+}
+
 function requestHash(input: PostJournalInput): string {
   return createHash("sha256")
     .update(JSON.stringify({
@@ -46,32 +70,12 @@ function requestHash(input: PostJournalInput): string {
     .digest("hex");
 }
 
-/**
- * Atomically posts an immutable double-entry journal transaction.
- *
- * The service deliberately does not calculate user balances with JavaScript
- * floating point arithmetic. Financial values cross the API boundary as
- * decimal strings and are validated here with fixed 18-decimal integer math.
- */
+/** Atomically posts an immutable double-entry journal transaction. */
 export async function postJournal(
   db: TradeSharkDatabase,
   input: PostJournalInput
 ): Promise<{ transactionId: string; idempotent: boolean }> {
-  if (input.entries.length < 2) {
-    throw new Error("A journal transaction requires at least two postings");
-  }
-
-  const debitTotal = input.entries
-    .filter((entry) => entry.direction === "debit")
-    .reduce((sum, entry) => sum + toScaledInteger(entry.amount), 0n);
-  const creditTotal = input.entries
-    .filter((entry) => entry.direction === "credit")
-    .reduce((sum, entry) => sum + toScaledInteger(entry.amount), 0n);
-
-  if (debitTotal <= 0n || creditTotal <= 0n || debitTotal !== creditTotal) {
-    throw new Error("Unbalanced journal transaction: debits must equal credits and both must be positive");
-  }
-
+  validateJournalEntries(input.entries);
   const hash = requestHash(input);
 
   return db.transaction(async (tx) => {
