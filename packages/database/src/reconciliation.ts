@@ -35,7 +35,7 @@ export async function reconcileLedgerBalance(
   const journalRows = await db
     .select({
       balance: sql<string>`coalesce(sum(case when ${journalEntries.direction} = 'credit' then ${journalEntries.amount} else -${journalEntries.amount} end), 0)`,
-      difference: sql<string>`${projectedBalance}::numeric - coalesce(sum(case when ${journalEntries.direction} = 'credit' then ${journalEntries.amount} else -${journalEntries.amount} end), 0)`
+      difference: sql<string>`case when ${projectedBalance}::numeric = coalesce(sum(case when ${journalEntries.direction} = 'credit' then ${journalEntries.amount} else -${journalEntries.amount} end), 0) then 0 else ${projectedBalance}::numeric - coalesce(sum(case when ${journalEntries.direction} = 'credit' then ${journalEntries.amount} else -${journalEntries.amount} end), 0) end`
     })
     .from(journalEntries)
     .innerJoin(
