@@ -1,0 +1,217 @@
+import { randomUUID } from "node:crypto";
+import { afterAll, describe, expect, it } from "vitest";
+import { createDatabase } from "@tradeshark/database";
+import {
+  confirmDepositAtomically,
+  creditDepositAtomically,
+  confirmWithdrawalAtomically,
+  failWithdrawalAtomically,
+  requestWithdrawalAtomically,
+  submitWithdrawalAtomically
+} from "./index.js";
+
+const databaseUrl = process.env.DATABASE_URL;
+const integration = databaseUrl ? describe : describe.skip;
+const client = databaseUrl ? createDatabase(databaseUrl) : null;
+
+integration("PostgreSQL wallet funding integration", () => {
+  afterAll(async () => {
+    await client?.pool.end();
+  });
+
+  it("settles a deposit into available balance and rolls back an insufficient withdrawal", async () => {
+    if (!client) throw new Error("DATABASE_URL is required");
+
+    const userId = randomUUID();
+    const assetId = randomUUID();
+    const externalId = randomUUID();
+    const pendingDepositId = randomUUID();
+    const availableId = randomUUID();
+    const lockedId = randomUUID();
+    const pendingWithdrawalId = randomUUID();
+    const depositId = randomUUID();
+    const withdrawalId = randomUUID();
+    const depositAmount = "25.00";
+    const withdrawalAmount = "10.00";
+
+    try {
+      await client.pool.query(
+        `INSERT INTO users (id, email, username) VALUES ($1, $2, $3)`,
+        [userId, `${userId}@wallet.integration.test`, `wallet_${userId.replaceAll("-", "")}`]
+      );
+      await client.pool.query(
+        `INSERT INTO assets (id, symbol, name, decimals, is_active) VALUES ($1, $2, $3, 18, true)`,
+        [assetId, `W${assetId.slice(0, 4).toUpperCase()}`, "Wallet Integration Asset"]
+      );
+      await client.pool.query(
+        `INSERT INTO ledger_accounts (id, user_id, asset_id, account_type, code) VALUES
+          ($1, NULL, $2, 'EXTERNAL_SETTLEMENT', $3),
+          ($4, $5, $2, 'USER_PENDING_DEPOSIT', $6),
+          ($7, $5, $2, 'USER_AVAILABLE', $8),
+          ($9, $5, $2, 'USER_LOCKED', $10),
+          ($11, $5, $2, 'USER_PENDING_WITHDRAWAL', $12)`,
+        [
+          externalId,
+          assetId,
+          `wallet-external:${externalId}`,
+          pendingDepositId,
+          userId,
+          `wallet-pending-deposit:${pendingDepositId}`,
+          availableId,
+          userId,
+          `wallet-available:${availableId}`,
+          lockedId,
+          userId,
+          `wallet-pending-withdrawal:${pendingWithdrawalId}`
+        ]
+      );
+      await client.pool.query(
+        `INSERT INTO ledger_balance_projections (account_id, balance, version) VALUES ($1, 0, 0), ($2, 0, 0), ($3, 0, 0)`,
+        [pendingDepositId, availableId, lockedId]
+      );
+
+      await client.pool.query(
+        `INSERT INTO deposits (id, user_id, asset_id, pending_account_id, amount, status, external_reference)
+         VALUES ($1, $2, $3, $4, $5, 'pending', $6)`,
+        [depositId, userId, assetId, pendingDepositId, depositAmount, `deposit-ext:${depositId}`]
+      );
+
+      const confirmed = await confirmDepositAtomically(client.db, depositId);
+      expect(confirmed.idempotent).toBe(false);
+      expect(confirmed.transactionId).toBeTypeOf("string");
+
+      const credited = await creditDepositAtomically(client.db, depositId);
+      expect(credited.idempotent).toBe(false);
+      expect(credited.transactionId).toBeTypeOf("string");
+
+      const depositRetry = await creditDepositAtomically(client.db, depositId);
+      expect(depositRetry).toEqual({ transactionId: credited.transactionId, idempotent: true });
+
+      const balances = await client.pool.query(
+        `SELECT account_id, balance::text FROM ledger_balance_projections WHERE account_id = ANY($1::uuid[]) ORDER BY account_id`,
+        [[pendingDepositId, availableId, lockedId]]
+      );
+      const balanceByAccount = new Map(balances.rows.map((row) => [row.account_id, row.balance]));
+      expect(balanceByAccount.get(pendingDepositId)).toBe("0.000000000000000000");
+      expect(balanceByAccount.get(availableId)).toBe("25.000000000000000000");
+      expect(balanceByAccount.get(lockedId)).toBe("0.000000000000000000");
+
+      await client.pool.query(
+        `INSERT INTO withdrawals (id, user_id, asset_id, pending_account_id, amount, status, destination)
+         VALUES ($1, $2, $3, $4, $5, 'requested', $6)`,
+        [withdrawalId, userId, assetId, pendingWithdrawalId, withdrawalAmount, "integration-destination"]
+      );
+
+      const locked = await requestWithdrawalAtomically(client.db, withdrawalId);
+      expect(locked.idempotent).toBe(false);
+
+      const approved = await client.pool.query(
+        `UPDATE withdrawals SET status = 'approved', updated_at = now() WHERE id = $1 RETURNING status`,
+        [withdrawalId]
+      );
+      expect(approved.rows[0].status).toBe("approved");
+
+      const submitted = await submitWithdrawalAtomically(client.db, withdrawalId);
+      expect(submitted.idempotent).toBe(false);
+
+      const confirmedWithdrawal = await confirmWithdrawalAtomically(client.db, withdrawalId);
+      expect(confirmedWithdrawal.idempotent).toBe(false);
+
+      const withdrawalRetry = await confirmWithdrawalAtomically(client.db, withdrawalId);
+      expect(withdrawalRetry).toEqual({ transactionId: confirmedWithdrawal.transactionId, idempotent: true });
+
+      const withdrawalStatus = await client.pool.query(
+        `SELECT status FROM withdrawals WHERE id = $1`,
+        [withdrawalId]
+      );
+      expect(withdrawalStatus.rows[0].status).toBe("confirmed");
+
+      const finalBalances = await client.pool.query(
+        `SELECT account_id, balance::text FROM ledger_balance_projections WHERE account_id = ANY($1::uuid[]) ORDER BY account_id`,
+        [[pendingDepositId, availableId, lockedId, pendingWithdrawalId]]
+      );
+      const finalByAccount = new Map(finalBalances.rows.map((row) => [row.account_id, row.balance]));
+      expect(finalByAccount.get(availableId)).toBe("15.000000000000000000");
+      expect(finalByAccount.get(lockedId)).toBe("0.000000000000000000");
+      expect(finalByAccount.get(pendingWithdrawalId)).toBe("0.000000000000000000");
+    } finally {
+      await client.pool.query(`DELETE FROM journal_entries WHERE transaction_id IN (SELECT id FROM journal_transactions WHERE reference_id IN ($1, $2))`, [depositId, withdrawalId]);
+      await client.pool.query(`DELETE FROM journal_transactions WHERE reference_id IN ($1, $2)`, [depositId, withdrawalId]);
+      await client.pool.query(`DELETE FROM idempotency_keys WHERE key LIKE $1 OR key LIKE $2`, [`deposit:${depositId}:%`, `withdrawal:${withdrawalId}:%`]);
+      await client.pool.query(`DELETE FROM deposits WHERE id = $1`, [depositId]);
+      await client.pool.query(`DELETE FROM withdrawals WHERE id = $1`, [withdrawalId]);
+      await client.pool.query(`DELETE FROM ledger_balance_projections WHERE account_id = ANY($1::uuid[])`, [[pendingDepositId, availableId, lockedId, pendingWithdrawalId]]);
+      await client.pool.query(`DELETE FROM ledger_accounts WHERE id = ANY($1::uuid[])`, [[externalId, pendingDepositId, availableId, lockedId, pendingWithdrawalId]]);
+      await client.pool.query(`DELETE FROM assets WHERE id = $1`, [assetId]);
+      await client.pool.query(`DELETE FROM users WHERE id = $1`, [userId]);
+    }
+  });
+
+  it("releases locked funds when an approved withdrawal fails", async () => {
+    if (!client) throw new Error("DATABASE_URL is required");
+
+    const userId = randomUUID();
+    const assetId = randomUUID();
+    const availableId = randomUUID();
+    const lockedId = randomUUID();
+    const pendingWithdrawalId = randomUUID();
+    const withdrawalId = randomUUID();
+    const seedTransactionId = randomUUID();
+    const seedKey = `wallet:seed:${randomUUID()}`;
+
+    try {
+      await client.pool.query(`INSERT INTO users (id, email, username) VALUES ($1, $2, $3)`, [userId, `${userId}@wallet.integration.test`, `fail_${userId.replaceAll("-", "")}`]);
+      await client.pool.query(`INSERT INTO assets (id, symbol, name, decimals, is_active) VALUES ($1, $2, $3, 18, true)`, [assetId, `F${assetId.slice(0, 4).toUpperCase()}`, "Wallet Failure Asset"]);
+      await client.pool.query(
+        `INSERT INTO ledger_accounts (id, user_id, asset_id, account_type, code) VALUES
+          ($1, $2, $3, 'USER_AVAILABLE', $4),
+          ($5, $2, $3, 'USER_LOCKED', $6),
+          ($7, $2, $3, 'USER_PENDING_WITHDRAWAL', $8),
+          ($9, NULL, $3, 'EXTERNAL_SETTLEMENT', $10)`,
+        [availableId, userId, assetId, `fail-available:${availableId}`, lockedId, `fail-locked:${lockedId}`, pendingWithdrawalId, `fail-pending:${pendingWithdrawalId}`, randomUUID(), `fail-external:${assetId}`]
+      );
+      await client.pool.query(`INSERT INTO ledger_balance_projections (account_id, balance, version) VALUES ($1, 0, 0), ($2, 0, 0)`, [availableId, lockedId]);
+
+      // Seed available funds through the same ledger service path rather than mutating the projection directly.
+      const externalRows = await client.pool.query(`SELECT id FROM ledger_accounts WHERE asset_id = $1 AND account_type = 'EXTERNAL_SETTLEMENT' LIMIT 1`, [assetId]);
+      await client.pool.query(`INSERT INTO ledger_balance_projections (account_id, balance, version) VALUES ($1, 0, 0) ON CONFLICT (account_id) DO NOTHING`, [externalRows.rows[0].id]);
+      const { postJournal } = await import("@tradeshark/database");
+      await postJournal(client.db, {
+        transactionId: seedTransactionId,
+        idempotencyKey: seedKey,
+        referenceType: "wallet_integration_seed",
+        entries: [
+          { accountId: externalRows.rows[0].id, direction: "debit", amount: "20" },
+          { accountId: availableId, direction: "credit", amount: "20" }
+        ]
+      });
+
+      await client.pool.query(`INSERT INTO withdrawals (id, user_id, asset_id, pending_account_id, amount, status, destination) VALUES ($1, $2, $3, $4, 7, 'requested', 'integration-failure')`, [withdrawalId, userId, assetId, pendingWithdrawalId]);
+      await requestWithdrawalAtomically(client.db, withdrawalId);
+      await client.pool.query(`UPDATE withdrawals SET status = 'approved', updated_at = now() WHERE id = $1`, [withdrawalId]);
+
+      const failed = await failWithdrawalAtomically(client.db, withdrawalId);
+      expect(failed.idempotent).toBe(false);
+      const retry = await failWithdrawalAtomically(client.db, withdrawalId);
+      expect(retry).toEqual({ transactionId: failed.transactionId, idempotent: true });
+
+      const state = await client.pool.query(`SELECT status, failure_reason FROM withdrawals WHERE id = $1`, [withdrawalId]);
+      expect(state.rows[0]).toEqual({ status: "failed", failure_reason: "withdrawal_failed" });
+
+      const balances = await client.pool.query(`SELECT account_id, balance::text FROM ledger_balance_projections WHERE account_id = ANY($1::uuid[])`, [[availableId, lockedId]]);
+      const byAccount = new Map(balances.rows.map((row) => [row.account_id, row.balance]));
+      expect(byAccount.get(availableId)).toBe("20.000000000000000000");
+      expect(byAccount.get(lockedId)).toBe("0.000000000000000000");
+    } finally {
+      await client.pool.query(`DELETE FROM journal_entries WHERE transaction_id IN (SELECT id FROM journal_transactions WHERE reference_id = $1 OR reference_type = 'wallet_integration_seed')`, [withdrawalId]);
+      await client.pool.query(`DELETE FROM journal_transactions WHERE reference_id = $1 OR idempotency_key = $2`, [withdrawalId, seedKey]);
+      await client.pool.query(`DELETE FROM idempotency_keys WHERE key LIKE $1 OR key = $2`, [`withdrawal:${withdrawalId}:%`, seedKey]);
+      await client.pool.query(`DELETE FROM withdrawals WHERE id = $1`, [withdrawalId]);
+      await client.pool.query(`DELETE FROM ledger_balance_projections WHERE account_id = ANY($1::uuid[])`, [[availableId, lockedId, pendingWithdrawalId]]);
+      await client.pool.query(`DELETE FROM ledger_accounts WHERE id = ANY($1::uuid[])`, [[availableId, lockedId, pendingWithdrawalId]]);
+      await client.pool.query(`DELETE FROM ledger_accounts WHERE asset_id = $1`, [assetId]);
+      await client.pool.query(`DELETE FROM assets WHERE id = $1`, [assetId]);
+      await client.pool.query(`DELETE FROM users WHERE id = $1`, [userId]);
+    }
+  });
+});
