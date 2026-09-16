@@ -58,10 +58,10 @@ integration("PostgreSQL wallet funding integration", () => {
           userId,
           `wallet-pending-deposit:${pendingDepositId}`,
           availableId,
-          userId,
           `wallet-available:${availableId}`,
           lockedId,
-          userId,
+          `wallet-locked:${lockedId}`,
+          pendingWithdrawalId,
           `wallet-pending-withdrawal:${pendingWithdrawalId}`
         ]
       );
@@ -155,6 +155,7 @@ integration("PostgreSQL wallet funding integration", () => {
     const availableId = randomUUID();
     const lockedId = randomUUID();
     const pendingWithdrawalId = randomUUID();
+    const externalId = randomUUID();
     const withdrawalId = randomUUID();
     const seedTransactionId = randomUUID();
     const seedKey = `wallet:seed:${randomUUID()}`;
@@ -168,20 +169,19 @@ integration("PostgreSQL wallet funding integration", () => {
           ($5, $2, $3, 'USER_LOCKED', $6),
           ($7, $2, $3, 'USER_PENDING_WITHDRAWAL', $8),
           ($9, NULL, $3, 'EXTERNAL_SETTLEMENT', $10)`,
-        [availableId, userId, assetId, `fail-available:${availableId}`, lockedId, `fail-locked:${lockedId}`, pendingWithdrawalId, `fail-pending:${pendingWithdrawalId}`, randomUUID(), `fail-external:${assetId}`]
+        [availableId, userId, assetId, `fail-available:${availableId}`, lockedId, `fail-locked:${lockedId}`, pendingWithdrawalId, `fail-pending:${pendingWithdrawalId}`, externalId, `fail-external:${assetId}`]
       );
       await client.pool.query(`INSERT INTO ledger_balance_projections (account_id, balance, version) VALUES ($1, 0, 0), ($2, 0, 0)`, [availableId, lockedId]);
 
       // Seed available funds through the same ledger service path rather than mutating the projection directly.
-      const externalRows = await client.pool.query(`SELECT id FROM ledger_accounts WHERE asset_id = $1 AND account_type = 'EXTERNAL_SETTLEMENT' LIMIT 1`, [assetId]);
-      await client.pool.query(`INSERT INTO ledger_balance_projections (account_id, balance, version) VALUES ($1, 0, 0) ON CONFLICT (account_id) DO NOTHING`, [externalRows.rows[0].id]);
+      await client.pool.query(`INSERT INTO ledger_balance_projections (account_id, balance, version) VALUES ($1, 0, 0) ON CONFLICT (account_id) DO NOTHING`, [externalId]);
       const { postJournal } = await import("@tradeshark/database");
       await postJournal(client.db, {
         transactionId: seedTransactionId,
         idempotencyKey: seedKey,
         referenceType: "wallet_integration_seed",
         entries: [
-          { accountId: externalRows.rows[0].id, direction: "debit", amount: "20" },
+          { accountId: externalId, direction: "debit", amount: "20" },
           { accountId: availableId, direction: "credit", amount: "20" }
         ]
       });
@@ -207,8 +207,7 @@ integration("PostgreSQL wallet funding integration", () => {
       await client.pool.query(`DELETE FROM journal_transactions WHERE reference_id = $1 OR idempotency_key = $2`, [withdrawalId, seedKey]);
       await client.pool.query(`DELETE FROM idempotency_keys WHERE key LIKE $1 OR key = $2`, [`withdrawal:${withdrawalId}:%`, seedKey]);
       await client.pool.query(`DELETE FROM withdrawals WHERE id = $1`, [withdrawalId]);
-      await client.pool.query(`DELETE FROM ledger_balance_projections WHERE account_id = ANY($1::uuid[])`, [[availableId, lockedId, pendingWithdrawalId]]);
-      await client.pool.query(`DELETE FROM ledger_accounts WHERE id = ANY($1::uuid[])`, [[availableId, lockedId, pendingWithdrawalId]]);
+      await client.pool.query(`DELETE FROM ledger_balance_projections WHERE account_id IN (SELECT id FROM ledger_accounts WHERE asset_id = $1)`, [assetId]);
       await client.pool.query(`DELETE FROM ledger_accounts WHERE asset_id = $1`, [assetId]);
       await client.pool.query(`DELETE FROM assets WHERE id = $1`, [assetId]);
       await client.pool.query(`DELETE FROM users WHERE id = $1`, [userId]);
