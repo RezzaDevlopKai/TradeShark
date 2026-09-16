@@ -32,6 +32,8 @@ export const journalStatus = pgEnum("journal_status", ["posted", "reversed"]);
 export const orderSide = pgEnum("order_side", ["buy", "sell"]);
 export const orderStatus = pgEnum("order_status", ["pending", "open", "partially_filled", "filled", "cancelled", "rejected"]);
 export const activitySource = pgEnum("activity_source", ["user", "engine", "system", "admin", "promotion"]);
+export const fundingStatus = pgEnum("funding_status", ["pending", "confirmed", "credited", "failed", "reversed"]);
+export const withdrawalStatus = pgEnum("withdrawal_status", ["requested", "pending", "approved", "submitted", "confirmed", "failed", "reversed", "cancelled"]);
 
 export const users = pgTable("users", {
   id: uuid("id").primaryKey(),
@@ -144,6 +146,43 @@ export const trades = pgTable("trades", {
   quantityCheck: check("trades_quantity_positive", sql`${table.quantity} > 0`),
   feeCheck: check("trades_fee_nonnegative", sql`${table.feeAmount} >= 0`),
   marketIdx: index("trades_market_time_idx").on(table.marketId, table.executedAt)
+}));
+
+export const deposits = pgTable("deposits", {
+  id: uuid("id").primaryKey(),
+  userId: uuid("user_id").notNull().references(() => users.id),
+  assetId: uuid("asset_id").notNull().references(() => assets.id),
+  pendingAccountId: uuid("pending_account_id").notNull().references(() => ledgerAccounts.id),
+  amount: numeric("amount", { precision: 38, scale: 18 }).notNull(),
+  status: fundingStatus("status").notNull().default("pending"),
+  externalReference: text("external_reference").notNull().unique(),
+  confirmationCount: integer("confirmation_count").notNull().default(0),
+  confirmedAt: timestamp("confirmed_at", { withTimezone: true }),
+  creditedAt: timestamp("credited_at", { withTimezone: true }),
+  failureReason: text("failure_reason"),
+  ...timestamps
+}, (table) => ({
+  userStatusIdx: index("deposits_user_status_idx").on(table.userId, table.status, table.createdAt),
+  amountCheck: check("deposits_amount_positive", sql`${table.amount} > 0`),
+  confirmationsCheck: check("deposits_confirmation_count_nonnegative", sql`${table.confirmationCount} >= 0`)
+}));
+
+export const withdrawals = pgTable("withdrawals", {
+  id: uuid("id").primaryKey(),
+  userId: uuid("user_id").notNull().references(() => users.id),
+  assetId: uuid("asset_id").notNull().references(() => assets.id),
+  pendingAccountId: uuid("pending_account_id").notNull().references(() => ledgerAccounts.id),
+  amount: numeric("amount", { precision: 38, scale: 18 }).notNull(),
+  status: withdrawalStatus("status").notNull().default("requested"),
+  destination: text("destination").notNull(),
+  externalReference: text("external_reference").unique(),
+  submittedAt: timestamp("submitted_at", { withTimezone: true }),
+  confirmedAt: timestamp("confirmed_at", { withTimezone: true }),
+  failureReason: text("failure_reason"),
+  ...timestamps
+}, (table) => ({
+  userStatusIdx: index("withdrawals_user_status_idx").on(table.userId, table.status, table.createdAt),
+  amountCheck: check("withdrawals_amount_positive", sql`${table.amount} > 0`)
 }));
 
 export const coinProjects = pgTable("coin_projects", {
@@ -295,6 +334,8 @@ export const allTables = {
   journalEntries,
   orders,
   trades,
+  deposits,
+  withdrawals,
   coinProjects,
   coinCreationEntitlements,
   coinCreationRedemptions,
@@ -315,4 +356,6 @@ export type JournalTransaction = typeof journalTransactions.$inferSelect;
 export type JournalEntry = typeof journalEntries.$inferSelect;
 export type Order = typeof orders.$inferSelect;
 export type Trade = typeof trades.$inferSelect;
+export type Deposit = typeof deposits.$inferSelect;
+export type Withdrawal = typeof withdrawals.$inferSelect;
 export type CoinProject = typeof coinProjects.$inferSelect;
