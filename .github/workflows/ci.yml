@@ -73,6 +73,9 @@ jobs:
       - name: Initialize PostgreSQL schema from migrations
         run: pnpm --filter @tradeshark/database db:migrate
 
+      - name: Verify migrations are idempotent
+        run: pnpm --filter @tradeshark/database db:migrate
+
       - name: Run PostgreSQL database integration tests
         run: pnpm --filter @tradeshark/database test
 
