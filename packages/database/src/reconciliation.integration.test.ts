@@ -77,7 +77,7 @@ integration("PostgreSQL ledger reconciliation integration", () => {
       });
 
       await client.pool.query(
-        `UPDATE ledger_balance_projections SET balance = '15.000000000000000000' - 0.000000000000000001 WHERE account_id = $1`,
+        `UPDATE ledger_balance_projections SET balance = balance - 0.000000000000000001 WHERE account_id = $1`,
         [userAccountId]
       );
 
