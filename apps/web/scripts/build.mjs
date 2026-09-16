@@ -7,7 +7,17 @@ const dist = resolve(root, "dist");
 
 await rm(dist, { recursive: true, force: true });
 await mkdir(dist, { recursive: true });
-for (const name of ["index.html", "styles.css", "app.js", "robots.txt", "sitemap.xml"]) {
+for (const name of [
+  "index.html",
+  "markets.html",
+  "intelligence.html",
+  "mayhem.html",
+  "trade.html",
+  "styles.css",
+  "app.js",
+  "robots.txt",
+  "sitemap.xml"
+]) {
   await cp(resolve(root, name), resolve(dist, name));
 }
 console.log(`TradeShark web built to ${dist}`);
