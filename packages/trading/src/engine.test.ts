@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { calculateFee, matchLimitOrder, normalizeDecimal, validateLimitOrder } from "./engine.js";
 
-const maker = (id: string, userId: string, side: "buy" | "sell", price: string, quantity: string, sequence: number) => ({
-  id, userId, side, price, quantity, sequence, status: "open" as const
+const maker = (id: string, userId: string, side: "buy" | "sell", price: string, quantity: string, sequence: number, status: "open" | "partially_filled" | "filled" = "open") => ({
+  id, userId, side, price, quantity, sequence, status
 });
 
 describe("trading core", () => {
@@ -14,6 +14,10 @@ describe("trading core", () => {
   it("rejects invalid precision and non-positive values", () => {
     expect(() => validateLimitOrder(maker("o", "u", "buy", "1.0000000000000000001", "1", 1))).toThrow();
     expect(() => validateLimitOrder(maker("o", "u", "buy", "1", "0", 1))).toThrow();
+  });
+
+  it("accepts a filled order with zero remaining quantity", () => {
+    expect(() => validateLimitOrder(maker("filled", "u", "sell", "10", "2", 1, "filled").constructor === Object ? { ...maker("filled", "u", "sell", "10", "2", 1, "filled"), remainingQuantity: "0" } : maker("filled", "u", "sell", "10", "2", 1, "filled"))).not.toThrow();
   });
 
   it("matches best price first, then FIFO at the same price", () => {
