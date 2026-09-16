@@ -73,5 +73,8 @@ jobs:
       - name: Initialize PostgreSQL schema
         run: pnpm --filter @tradeshark/database db:push -- --force
 
-      - name: Run PostgreSQL integration tests
+      - name: Run PostgreSQL database integration tests
         run: pnpm --filter @tradeshark/database test
+
+      - name: Run PostgreSQL wallet integration tests
+        run: pnpm --filter @tradeshark/wallet test
