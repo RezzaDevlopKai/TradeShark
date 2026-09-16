@@ -1,11 +1,12 @@
 import { describe, expect, it } from "vitest";
 import {
+  confirmDepositAtomically,
   creditDepositAtomically,
   confirmWithdrawalAtomically,
   failWithdrawalAtomically,
   requestWithdrawalAtomically,
   submitWithdrawalAtomically
-} from "./funding.js";
+} from "./index.js";
 
 describe("atomic funding settlement services", () => {
   it("exports the complete withdrawal settlement surface", () => {
@@ -15,7 +16,8 @@ describe("atomic funding settlement services", () => {
     expect(failWithdrawalAtomically).toBeTypeOf("function");
   });
 
-  it("exports atomic deposit crediting", () => {
+  it("exports the complete deposit settlement surface", () => {
+    expect(confirmDepositAtomically).toBeTypeOf("function");
     expect(creditDepositAtomically).toBeTypeOf("function");
   });
 });
