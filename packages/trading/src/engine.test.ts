@@ -17,7 +17,10 @@ describe("trading core", () => {
   });
 
   it("accepts a filled order with zero remaining quantity", () => {
-    expect(() => validateLimitOrder(maker("filled", "u", "sell", "10", "2", 1, "filled").constructor === Object ? { ...maker("filled", "u", "sell", "10", "2", 1, "filled"), remainingQuantity: "0" } : maker("filled", "u", "sell", "10", "2", 1, "filled"))).not.toThrow();
+    expect(() => validateLimitOrder({
+      ...maker("filled", "u", "sell", "10", "2", 1, "filled"),
+      remainingQuantity: "0"
+    })).not.toThrow();
   });
 
   it("matches best price first, then FIFO at the same price", () => {
