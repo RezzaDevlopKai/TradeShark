@@ -1,6 +1,7 @@
 import {
   boolean,
   check,
+  index,
   integer,
   jsonb,
   numeric,
@@ -9,9 +10,7 @@ import {
   text,
   timestamp,
   uniqueIndex,
-  uuid,
-  index,
-  primaryKey
+  uuid
 } from "drizzle-orm/pg-core";
 import { sql } from "drizzle-orm";
 
@@ -182,7 +181,7 @@ export const coinCreationRedemptions = pgTable("coin_creation_redemptions", {
   idempotencyKey: text("idempotency_key").notNull().unique(),
   redeemedAt: timestamp("redeemed_at", { withTimezone: true }).notNull().defaultNow(),
   ...timestamps
-}));
+});
 
 export const unlockCampaigns = pgTable("unlock_campaigns", {
   id: uuid("id").primaryKey(),
@@ -287,10 +286,26 @@ export const ledgerBalanceProjections = pgTable("ledger_balance_projections", {
 }));
 
 export const allTables = {
-  users, identities, assets, markets, ledgerAccounts, journalTransactions, journalEntries,
-  orders, trades, coinProjects, coinCreationEntitlements, coinCreationRedemptions,
-  unlockCampaigns, shareIntents, unlocks, activityEvents, auditEvents,
-  idempotencyKeys, outboxEvents, ledgerBalanceProjections
+  users,
+  identities,
+  assets,
+  markets,
+  ledgerAccounts,
+  journalTransactions,
+  journalEntries,
+  orders,
+  trades,
+  coinProjects,
+  coinCreationEntitlements,
+  coinCreationRedemptions,
+  unlockCampaigns,
+  shareIntents,
+  unlocks,
+  activityEvents,
+  auditEvents,
+  idempotencyKeys,
+  outboxEvents,
+  ledgerBalanceProjections
 };
 
 export type User = typeof users.$inferSelect;
