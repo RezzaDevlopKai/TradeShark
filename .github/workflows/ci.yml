@@ -70,8 +70,8 @@ jobs:
       - name: Install dependencies
         run: pnpm install --no-frozen-lockfile
 
-      - name: Initialize PostgreSQL schema
-        run: pnpm --filter @tradeshark/database db:push
+      - name: Initialize PostgreSQL schema from migrations
+        run: pnpm --filter @tradeshark/database db:migrate
 
       - name: Run PostgreSQL database integration tests
         run: pnpm --filter @tradeshark/database test
