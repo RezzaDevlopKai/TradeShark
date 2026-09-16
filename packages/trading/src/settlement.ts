@@ -78,7 +78,7 @@ export async function settleTrade(
       ...(input.buyerAvailableQuoteAccountId ? [input.buyerAvailableQuoteAccountId] : [])
     ];
     const accounts = await tx
-      .select({ id: ledgerAccounts.id, assetId: ledgerAccounts.assetId, accountType: ledgerAccounts.accountType })
+      .select({ id: ledgerAccounts.id, userId: ledgerAccounts.userId, assetId: ledgerAccounts.assetId, accountType: ledgerAccounts.accountType })
       .from(ledgerAccounts)
       .where(inArray(ledgerAccounts.id, accountIds));
 
@@ -92,18 +92,33 @@ export async function settleTrade(
       if (!account || account.assetId !== assetId || account.accountType !== accountType) {
         throw new Error(`Invalid settlement ledger account ${id}`);
       }
+      return account;
     };
 
-    requireAccount(input.buyerLockedQuoteAccountId, market.quoteAssetId, "USER_LOCKED");
-    requireAccount(input.sellerAvailableQuoteAccountId, market.quoteAssetId, "USER_AVAILABLE");
-    requireAccount(input.sellerLockedBaseAccountId, market.baseAssetId, "USER_LOCKED");
-    requireAccount(input.buyerAvailableBaseAccountId, market.baseAssetId, "USER_AVAILABLE");
+    const buyerLockedQuote = requireAccount(input.buyerLockedQuoteAccountId, market.quoteAssetId, "USER_LOCKED");
+    const buyerAvailableBase = requireAccount(input.buyerAvailableBaseAccountId, market.baseAssetId, "USER_AVAILABLE");
+    const sellerLockedBase = requireAccount(input.sellerLockedBaseAccountId, market.baseAssetId, "USER_LOCKED");
+    const sellerAvailableQuote = requireAccount(input.sellerAvailableQuoteAccountId, market.quoteAssetId, "USER_AVAILABLE");
     requireAccount(input.feeRevenueQuoteAccountId, market.quoteAssetId, "FEE_REVENUE");
+
+    if (!buyerLockedQuote.userId || buyerLockedQuote.userId !== buyerAvailableBase.userId) {
+      throw new Error("Buyer settlement accounts must belong to the same user");
+    }
+    if (!sellerLockedBase.userId || sellerLockedBase.userId !== sellerAvailableQuote.userId) {
+      throw new Error("Seller settlement accounts must belong to the same user");
+    }
+    if (buyerLockedQuote.userId === sellerLockedBase.userId) {
+      throw new Error("Trade settlement cannot use the same buyer and seller user");
+    }
+
     if (releasedQuoteAmount !== "0.000000000000000000") {
       if (!input.buyerAvailableQuoteAccountId) {
         throw new Error("buyerAvailableQuoteAccountId is required when a quote reservation must be released");
       }
       requireAccount(input.buyerAvailableQuoteAccountId, market.quoteAssetId, "USER_AVAILABLE");
+      if (accountById.get(input.buyerAvailableQuoteAccountId)?.userId !== buyerLockedQuote.userId) {
+        throw new Error("Buyer quote release account must belong to the buyer");
+      }
     }
 
     const base = await postJournalInTransaction(tx, {
