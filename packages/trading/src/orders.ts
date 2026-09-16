@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { and, eq, inArray } from "drizzle-orm";
+import { and, eq, inArray, sql } from "drizzle-orm";
 import type { TradeSharkDatabase } from "@tradeshark/database";
 import {
   assets,
@@ -63,9 +63,13 @@ export async function placeLimitOrder(
 
   const price = normalizeDecimal(input.price);
   const quantity = normalizeDecimal(input.quantity);
-  const feeRate = normalizeDecimal(input.feeRate ?? "0.0055");
+  const feeRate = normalizeFeeRate(input.feeRate ?? "0.0055");
 
   return db.transaction(async (tx) => {
+    // Serialize the same user's clientOrderId so concurrent retries converge
+    // to one order instead of racing through the unique constraint.
+    await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtext(${`${input.userId}:${input.clientOrderId}`}))`);
+
     const existingRows = await tx
       .select({
         id: orders.id,
@@ -86,7 +90,7 @@ export async function placeLimitOrder(
 
     const existing = existingRows[0];
     if (existing) {
-      const existingFeeRate = normalizeDecimal(existing.feeRate);
+      const existingFeeRate = normalizeFeeRate(existing.feeRate);
       if (
         existing.marketId !== input.marketId ||
         existing.side !== input.side ||
@@ -242,6 +246,15 @@ export async function placeLimitOrder(
       idempotent: false
     };
   });
+}
+
+function normalizeFeeRate(value: string): string {
+  const normalized = normalizeDecimal(value);
+  const fraction = normalized.split(".")[1] ?? "";
+  if (fraction.replace(/0+$/, "").length > 10) {
+    throw new Error("feeRate must have at most 10 decimal places");
+  }
+  return normalized;
 }
 
 function parseScaled(value: string): bigint {
