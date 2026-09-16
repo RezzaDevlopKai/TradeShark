@@ -1,0 +1,21 @@
+{
+  "name": "@tradeshark/wallet",
+  "version": "0.1.0",
+  "private": true,
+  "description": "TradeShark wallet read-model and ledger account helpers",
+  "type": "module",
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "lint": "eslint .",
+    "test": "vitest run",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "@tradeshark/database": "workspace:*",
+    "drizzle-orm": "^0.44.7"
+  },
+  "devDependencies": {
+    "typescript": "^5.9.2",
+    "vitest": "^3.2.4"
+  }
+}
