@@ -1,7 +1,13 @@
 import { createHash, randomUUID } from "node:crypto";
-import { eq, sql } from "drizzle-orm";
+import { and, eq, inArray, sql } from "drizzle-orm";
 import type { TradeSharkDatabase } from "./client.js";
-import { idempotencyKeys, journalEntries, journalTransactions } from "./schema/index.js";
+import {
+  idempotencyKeys,
+  journalEntries,
+  journalTransactions,
+  ledgerAccounts,
+  ledgerBalanceProjections
+} from "./schema/index.js";
 
 const SCALE = 18n;
 const SCALE_DIGITS = Number(SCALE);
@@ -141,6 +147,47 @@ export async function postJournal(
         sequence
       }))
     );
+
+    // The projection is deliberately limited to customer wallet accounts.
+    // Other ledger account types can have different accounting sign semantics.
+    const accountIds = [...new Set(input.entries.map((entry) => entry.accountId))];
+    const accounts = await tx
+      .select({ id: ledgerAccounts.id, accountType: ledgerAccounts.accountType })
+      .from(ledgerAccounts)
+      .where(inArray(ledgerAccounts.id, accountIds));
+    const accountTypes = new Map(accounts.map((account) => [account.id, account.accountType]));
+
+    for (const entry of input.entries) {
+      if (!accountTypes.get(entry.accountId)?.startsWith("USER_")) continue;
+
+      await tx
+        .insert(ledgerBalanceProjections)
+        .values({ accountId: entry.accountId, balance: "0" })
+        .onConflictDoNothing({ target: ledgerBalanceProjections.accountId });
+
+      const updated = await tx
+        .update(ledgerBalanceProjections)
+        .set({
+          balance:
+            entry.direction === "debit"
+              ? sql`${ledgerBalanceProjections.balance} - ${entry.amount}`
+              : sql`${ledgerBalanceProjections.balance} + ${entry.amount}`,
+          version: sql`${ledgerBalanceProjections.version} + 1`,
+          updatedAt: sql`now()`
+        })
+        .where(
+          and(
+            eq(ledgerBalanceProjections.accountId, entry.accountId),
+            entry.direction === "debit"
+              ? sql`${ledgerBalanceProjections.balance} >= ${entry.amount}`
+              : sql`true`
+          )
+        );
+
+      if (updated.rowCount !== 1) {
+        throw new Error(`Insufficient wallet balance for ledger account ${entry.accountId}`);
+      }
+    }
 
     return { transactionId: input.transactionId, idempotent: false };
   });
