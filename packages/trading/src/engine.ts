@@ -35,7 +35,9 @@ function parseDecimal(value: string, field: string): bigint {
   if (!/^(?:0|[1-9]\d*)(?:\.\d{1,18})?$/.test(value)) {
     throw new Error(`${field} must be a positive decimal with at most 18 decimals`);
   }
-  const [whole, fraction = ""] = value.split(".");
+  const parts = value.split(".");
+  const whole = parts[0] ?? "";
+  const fraction = parts[1] ?? "";
   const scaled = BigInt(whole) * SCALE_FACTOR + BigInt(fraction.padEnd(SCALE, "0") || "0");
   if (scaled <= 0n) throw new Error(`${field} must be positive`);
   return scaled;
