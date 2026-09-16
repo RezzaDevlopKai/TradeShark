@@ -24,10 +24,11 @@ integration("PostgreSQL ledger integration", () => {
     const referenceId = randomUUID();
 
     try {
-      await client.pool.query(
-        `INSERT INTO users (id, email, username) VALUES ($1, $2, $3)`,
-        [userId, `${userId}@integration.test`, `integration_${userId.replaceAll("-", "")}`]
-      );
+      await client.pool.query(`INSERT INTO users (id, email, username) VALUES ($1, $2, $3)`, [
+        userId,
+        `${userId}@integration.test`,
+        `integration_${userId.replaceAll("-", "")}`
+      ]);
       await client.pool.query(
         `INSERT INTO assets (id, symbol, name, decimals, is_active) VALUES ($1, 'TST', 'Integration Test Asset', 18, true)`,
         [assetId]
@@ -120,10 +121,11 @@ integration("PostgreSQL ledger integration", () => {
     };
 
     try {
-      await client.pool.query(
-        `INSERT INTO users (id, email, username) VALUES ($1, $2, $3)`,
-        [userId, `${userId}@integration.test`, `integration_${userId.replaceAll("-", "")}`]
-      );
+      await client.pool.query(`INSERT INTO users (id, email, username) VALUES ($1, $2, $3)`, [
+        userId,
+        `${userId}@integration.test`,
+        `integration_${userId.replaceAll("-", "")}`
+      ]);
       await client.pool.query(
         `INSERT INTO assets (id, symbol, name, decimals, is_active) VALUES ($1, $2, $3, 18, true)`,
         [assetId, `T${assetId.slice(0, 3).toUpperCase()}`, "Concurrency Test Asset"]
@@ -134,9 +136,9 @@ integration("PostgreSQL ledger integration", () => {
       );
 
       const results = await Promise.all(
-        Array.from({ length: 8 }, (_, index) =>
+        Array.from({ length: 8 }, () =>
           postJournal(client.db, {
-            transactionId: index === 0 ? transactionId : randomUUID(),
+            transactionId,
             idempotencyKey,
             ...input
           })
