@@ -30,9 +30,12 @@ export async function reconcileLedgerBalance(
     .where(eq(ledgerBalanceProjections.accountId, accountId))
     .limit(1);
 
+  const projectedBalance = projectionRows[0]?.balance ?? "0";
+
   const journalRows = await db
     .select({
-      balance: sql<string>`coalesce(sum(case when ${journalEntries.direction} = 'credit' then ${journalEntries.amount} else -${journalEntries.amount} end), 0)`
+      balance: sql<string>`coalesce(sum(case when ${journalEntries.direction} = 'credit' then ${journalEntries.amount} else -${journalEntries.amount} end), 0)`,
+      difference: sql<string>`${projectedBalance}::numeric - coalesce(sum(case when ${journalEntries.direction} = 'credit' then ${journalEntries.amount} else -${journalEntries.amount} end), 0)`
     })
     .from(journalEntries)
     .innerJoin(
@@ -46,23 +49,14 @@ export async function reconcileLedgerBalance(
       )
     );
 
-  const projectedBalance = projectionRows[0]?.balance ?? "0";
   const ledgerBalance = journalRows[0]?.balance ?? "0";
-
-  const differenceRows = await db
-    .select({
-      difference: sql<string>`${projectedBalance}::numeric - ${ledgerBalance}::numeric`,
-      consistent: sql<boolean>`${projectedBalance}::numeric = ${ledgerBalance}::numeric`
-    });
-
-  const difference = differenceRows[0]?.difference ?? "0";
-  const consistent = differenceRows[0]?.consistent ?? false;
+  const difference = journalRows[0]?.difference ?? projectedBalance;
 
   return {
     accountId,
     projectedBalance,
     ledgerBalance,
     difference,
-    consistent
+    consistent: difference === "0"
   };
 }
