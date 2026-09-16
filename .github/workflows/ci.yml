@@ -71,7 +71,7 @@ jobs:
         run: pnpm install --no-frozen-lockfile
 
       - name: Initialize PostgreSQL schema
-        run: pnpm --filter @tradeshark/database db:push -- --force
+        run: pnpm --filter @tradeshark/database db:push
 
       - name: Run PostgreSQL database integration tests
         run: pnpm --filter @tradeshark/database test
