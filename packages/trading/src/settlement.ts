@@ -3,7 +3,10 @@ import type { TradeSharkDatabase } from "@tradeshark/database";
 import { postJournalInTransaction } from "@tradeshark/database";
 import { calculateFee, normalizeDecimal } from "./engine.js";
 
-export type SettleTradeInput = {
+const SCALE = 18n;
+const FACTOR = 10n ** SCALE;
+
+type SettleTradeInput = {
   tradeId: string;
   marketId: string;
   price: string;
@@ -16,6 +19,8 @@ export type SettleTradeInput = {
   feeRevenueQuoteAccountId: string;
 };
 
+export type { SettleTradeInput };
+
 export type SettleTradeResult = {
   baseTransactionId: string;
   quoteTransactionId: string;
@@ -25,22 +30,20 @@ export type SettleTradeResult = {
 
 /**
  * Atomically settles one trade through two asset-specific double-entry journals.
- * The trading model charges the buyer in quote currency; this keeps the fee
- * asset consistent for both buy- and sell-takers until per-side fee assets exist.
+ * The buyer pays the quote-currency trading fee; both asset movements remain
+ * separately balanced and therefore cannot mix unrelated asset units.
  */
 export async function settleTrade(
   db: TradeSharkDatabase,
   input: SettleTradeInput
 ): Promise<SettleTradeResult> {
+  if (!input.tradeId || !input.marketId) throw new Error("tradeId and marketId are required");
+
   const price = normalizeDecimal(input.price);
   const quantity = normalizeDecimal(input.quantity);
   const feeRate = normalizeDecimal(input.feeRate ?? "0.0055");
+  const grossQuote = formatScaled((parseScaled(price) * parseScaled(quantity)) / FACTOR);
   const feeAmount = calculateFee(price, quantity, feeRate);
-  const grossQuote = normalizeDecimal(
-    ((BigInt(price.replace(".", "")) * BigInt(quantity.replace(".", ""))) / 10n ** 18n).toString().padStart(19, "0")
-  );
-
-  if (!input.tradeId || !input.marketId) throw new Error("tradeId and marketId are required");
 
   return db.transaction(async (tx) => {
     const base = await postJournalInTransaction(tx, {
@@ -55,23 +58,17 @@ export async function settleTrade(
       ]
     });
 
-    const quoteEntries = [
-      { accountId: input.buyerLockedQuoteAccountId, direction: "debit" as const, amount: grossQuote },
-      { accountId: input.sellerAvailableQuoteAccountId, direction: "credit" as const, amount: grossQuote }
-    ];
-
-    if (feeAmount !== "0.000000000000000000") {
-      quoteEntries.push({
-        accountId: input.feeRevenueQuoteAccountId,
-        direction: "credit" as const,
-        amount: feeAmount
-      });
-      quoteEntries[0] = {
-        accountId: input.buyerLockedQuoteAccountId,
-        direction: "debit" as const,
-        amount: normalizeDecimal(addDecimals(grossQuote, feeAmount))
-      };
-    }
+    const buyerDebit = addDecimals(grossQuote, feeAmount);
+    const quoteEntries = feeAmount === "0.000000000000000000"
+      ? [
+          { accountId: input.buyerLockedQuoteAccountId, direction: "debit" as const, amount: grossQuote },
+          { accountId: input.sellerAvailableQuoteAccountId, direction: "credit" as const, amount: grossQuote }
+        ]
+      : [
+          { accountId: input.buyerLockedQuoteAccountId, direction: "debit" as const, amount: buyerDebit },
+          { accountId: input.sellerAvailableQuoteAccountId, direction: "credit" as const, amount: grossQuote },
+          { accountId: input.feeRevenueQuoteAccountId, direction: "credit" as const, amount: feeAmount }
+        ];
 
     const quote = await postJournalInTransaction(tx, {
       transactionId: randomUUID(),
@@ -91,15 +88,17 @@ export async function settleTrade(
   });
 }
 
-function addDecimals(left: string, right: string): string {
-  const scale = 18n;
-  const factor = 10n ** scale;
-  const parse = (value: string) => {
-    const [whole = "0", fraction = ""] = value.split(".");
-    return BigInt(whole) * factor + BigInt(fraction.padEnd(Number(scale), "0") || "0");
-  };
-  const total = parse(left) + parse(right);
-  const whole = total / factor;
-  const fraction = (total % factor).toString().padStart(Number(scale), "0");
+function parseScaled(value: string): bigint {
+  const [whole = "0", fraction = ""] = value.split(".");
+  return BigInt(whole) * FACTOR + BigInt(fraction.padEnd(Number(SCALE), "0") || "0");
+}
+
+function formatScaled(value: bigint): string {
+  const whole = value / FACTOR;
+  const fraction = (value % FACTOR).toString().padStart(Number(SCALE), "0");
   return `${whole}.${fraction}`;
+}
+
+function addDecimals(left: string, right: string): string {
+  return formatScaled(parseScaled(left) + parseScaled(right));
 }
