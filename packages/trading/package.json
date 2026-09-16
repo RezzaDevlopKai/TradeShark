@@ -8,7 +8,8 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@tradeshark/database": "workspace:*"
+    "@tradeshark/database": "workspace:*",
+    "drizzle-orm": "^0.44.5"
   },
   "devDependencies": {
     "typescript": "^5.9.2",
