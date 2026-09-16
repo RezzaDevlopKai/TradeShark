@@ -70,6 +70,10 @@ function remaining(order: LimitOrder): bigint {
   return parseDecimal(order.remainingQuantity ?? order.quantity, "remainingQuantity");
 }
 
+function compareBigInt(a: bigint, b: bigint): number {
+  return a < b ? -1 : a > b ? 1 : 0;
+}
+
 /**
  * Deterministic price-time priority matcher for one taker against an ordered maker book.
  * The caller owns persistence, locking, ledger reservation/settlement and transactionality.
@@ -81,8 +85,7 @@ export function matchLimitOrder(
   tradeIdFactory: (index: number) => string = (index) => `${taker.id}:trade:${index}`
 ): MatchResult {
   validateLimitOrder(taker);
-  parseDecimal(feeRate, "feeRate");
-
+  const feeRateScaled = parseDecimal(feeRate, "feeRate");
   const takerPrice = parseDecimal(taker.price, "price");
   let takerRemaining = remaining(taker);
 
@@ -100,13 +103,14 @@ export function matchLimitOrder(
     .sort((a, b) => {
       const priceA = parseDecimal(a.price, "price");
       const priceB = parseDecimal(b.price, "price");
-      const priceCompare = taker.side === "buy" ? Number(priceA - priceB) : Number(priceB - priceA);
+      const priceCompare = taker.side === "buy"
+        ? compareBigInt(priceA, priceB)
+        : compareBigInt(priceB, priceA);
       return priceCompare || a.sequence - b.sequence || a.id.localeCompare(b.id);
     });
 
   const trades: Trade[] = [];
   const makerOrders: LimitOrder[] = [];
-  const feeRateScaled = parseDecimal(feeRate, "feeRate");
 
   for (const maker of candidates) {
     if (takerRemaining === 0n) break;
