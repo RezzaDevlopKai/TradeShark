@@ -51,16 +51,18 @@ export async function reconcileLedgerBalance(
 
   const differenceRows = await db
     .select({
-      difference: sql<string>`${projectedBalance}::numeric - ${ledgerBalance}::numeric`
+      difference: sql<string>`${projectedBalance}::numeric - ${ledgerBalance}::numeric`,
+      consistent: sql<boolean>`${projectedBalance}::numeric = ${ledgerBalance}::numeric`
     });
 
   const difference = differenceRows[0]?.difference ?? "0";
+  const consistent = differenceRows[0]?.consistent ?? false;
 
   return {
     accountId,
     projectedBalance,
     ledgerBalance,
     difference,
-    consistent: difference === "0"
+    consistent
   };
 }
