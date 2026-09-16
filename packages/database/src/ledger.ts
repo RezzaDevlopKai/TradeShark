@@ -89,14 +89,26 @@ export function validateJournalEntries(entries: LedgerPosting[]): void {
   }
 }
 
+function canonicalize(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(canonicalize);
+  if (value !== null && typeof value === "object") {
+    return Object.fromEntries(
+      Object.entries(value as Record<string, unknown>)
+        .sort(([left], [right]) => left.localeCompare(right))
+        .map(([key, entry]) => [key, canonicalize(entry)])
+    );
+  }
+  return value;
+}
+
 function requestHash(input: PostJournalInput): string {
   return createHash("sha256")
-    .update(JSON.stringify({
+    .update(JSON.stringify(canonicalize({
       referenceType: input.referenceType,
       referenceId: input.referenceId ?? null,
       metadata: input.metadata ?? {},
       entries: input.entries
-    }))
+    })))
     .digest("hex");
 }
 
@@ -112,36 +124,35 @@ export async function postJournalInTransaction(
   validateJournalEntries(input.entries);
   const hash = requestHash(input);
 
+  // Insert-first + conflict-ignore closes the check-then-insert race when two
+  // concurrent callers use the same idempotency key. The winner owns the row;
+  // every caller then reads the canonical request hash and journal transaction.
+  await db.insert(idempotencyKeys).values({
+    key: input.idempotencyKey,
+    operation: "ledger.post_journal",
+    requestHash: hash,
+    expiresAt: sql`now() + interval '24 hours'`
+  }).onConflictDoNothing({ target: idempotencyKeys.key });
+
   const existing = await db
     .select({ requestHash: idempotencyKeys.requestHash })
     .from(idempotencyKeys)
     .where(eq(idempotencyKeys.key, input.idempotencyKey))
     .limit(1);
 
-  if (existing.length > 0) {
-    if (existing[0]!.requestHash !== hash) {
-      throw new Error("Idempotency key was already used with a different request");
-    }
-
-    const original = await db
-      .select({ transactionId: journalTransactions.id })
-      .from(journalTransactions)
-      .where(eq(journalTransactions.idempotencyKey, input.idempotencyKey))
-      .limit(1);
-
-    if (original.length === 0) {
-      throw new Error("Idempotency record exists without its journal transaction");
-    }
-
-    return { transactionId: original[0]!.transactionId, idempotent: true };
+  if (existing.length === 0 || existing[0]!.requestHash !== hash) {
+    throw new Error("Idempotency key was already used with a different request");
   }
 
-  await db.insert(idempotencyKeys).values({
-    key: input.idempotencyKey,
-    operation: "ledger.post_journal",
-    requestHash: hash,
-    expiresAt: sql`now() + interval '24 hours'`
-  });
+  const original = await db
+    .select({ transactionId: journalTransactions.id })
+    .from(journalTransactions)
+    .where(eq(journalTransactions.idempotencyKey, input.idempotencyKey))
+    .limit(1);
+
+  if (original.length > 0) {
+    return { transactionId: original[0]!.transactionId, idempotent: true };
+  }
 
   const transactionValues = {
     id: input.transactionId,
