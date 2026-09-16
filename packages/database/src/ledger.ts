@@ -13,6 +13,8 @@ const SCALE = 18n;
 const SCALE_DIGITS = Number(SCALE);
 const TEN_TO_SCALE = 10n ** SCALE;
 
+type LedgerDbExecutor = Pick<TradeSharkDatabase, "select" | "insert" | "update">;
+
 export type LedgerPosting = {
   accountId: string;
   direction: "debit" | "credit";
@@ -98,111 +100,121 @@ function requestHash(input: PostJournalInput): string {
     .digest("hex");
 }
 
-/** Atomically posts an immutable double-entry journal transaction. */
-export async function postJournal(
-  db: TradeSharkDatabase,
+/**
+ * Posts a journal inside an already-open database transaction.
+ * Lifecycle services use this to keep financial movement and state changes
+ * in the same atomic transaction boundary.
+ */
+export async function postJournalInTransaction(
+  db: LedgerDbExecutor,
   input: PostJournalInput
 ): Promise<{ transactionId: string; idempotent: boolean }> {
   validateJournalEntries(input.entries);
   const hash = requestHash(input);
 
-  return db.transaction(async (tx) => {
-    const existing = await tx
-      .select({ requestHash: idempotencyKeys.requestHash })
-      .from(idempotencyKeys)
-      .where(eq(idempotencyKeys.key, input.idempotencyKey))
+  const existing = await db
+    .select({ requestHash: idempotencyKeys.requestHash })
+    .from(idempotencyKeys)
+    .where(eq(idempotencyKeys.key, input.idempotencyKey))
+    .limit(1);
+
+  if (existing.length > 0) {
+    if (existing[0]!.requestHash !== hash) {
+      throw new Error("Idempotency key was already used with a different request");
+    }
+
+    const original = await db
+      .select({ transactionId: journalTransactions.id })
+      .from(journalTransactions)
+      .where(eq(journalTransactions.idempotencyKey, input.idempotencyKey))
       .limit(1);
 
-    if (existing.length > 0) {
-      if (existing[0]!.requestHash !== hash) {
-        throw new Error("Idempotency key was already used with a different request");
-      }
-
-      const original = await tx
-        .select({ transactionId: journalTransactions.id })
-        .from(journalTransactions)
-        .where(eq(journalTransactions.idempotencyKey, input.idempotencyKey))
-        .limit(1);
-
-      if (original.length === 0) {
-        throw new Error("Idempotency record exists without its journal transaction");
-      }
-
-      return { transactionId: original[0]!.transactionId, idempotent: true };
+    if (original.length === 0) {
+      throw new Error("Idempotency record exists without its journal transaction");
     }
 
-    await tx.insert(idempotencyKeys).values({
-      key: input.idempotencyKey,
-      operation: "ledger.post_journal",
-      requestHash: hash,
-      expiresAt: sql`now() + interval '24 hours'`
-    });
+    return { transactionId: original[0]!.transactionId, idempotent: true };
+  }
 
-    const transactionValues = {
-      id: input.transactionId,
-      idempotencyKey: input.idempotencyKey,
-      referenceType: input.referenceType,
-      metadata: input.metadata ?? {}
-    };
-
-    await tx.insert(journalTransactions).values(
-      input.referenceId === undefined
-        ? transactionValues
-        : { ...transactionValues, referenceId: input.referenceId }
-    );
-
-    await tx.insert(journalEntries).values(
-      input.entries.map((entry, sequence) => ({
-        id: randomUUID(),
-        transactionId: input.transactionId,
-        accountId: entry.accountId,
-        direction: entry.direction,
-        amount: entry.amount,
-        sequence
-      }))
-    );
-
-    // The projection is deliberately limited to customer wallet accounts.
-    // Other ledger account types can have different accounting sign semantics.
-    const accountIds = [...new Set(input.entries.map((entry) => entry.accountId))];
-    const accounts = await tx
-      .select({ id: ledgerAccounts.id, accountType: ledgerAccounts.accountType })
-      .from(ledgerAccounts)
-      .where(inArray(ledgerAccounts.id, accountIds));
-    const accountTypes = new Map(accounts.map((account) => [account.id, account.accountType]));
-
-    for (const entry of input.entries) {
-      if (!accountTypes.get(entry.accountId)?.startsWith("USER_")) continue;
-
-      await tx
-        .insert(ledgerBalanceProjections)
-        .values({ accountId: entry.accountId, balance: "0" })
-        .onConflictDoNothing({ target: ledgerBalanceProjections.accountId });
-
-      const updated = await tx
-        .update(ledgerBalanceProjections)
-        .set({
-          balance:
-            entry.direction === "debit"
-              ? sql`${ledgerBalanceProjections.balance} - ${entry.amount}`
-              : sql`${ledgerBalanceProjections.balance} + ${entry.amount}`,
-          version: sql`${ledgerBalanceProjections.version} + 1`,
-          updatedAt: sql`now()`
-        })
-        .where(
-          and(
-            eq(ledgerBalanceProjections.accountId, entry.accountId),
-            entry.direction === "debit"
-              ? sql`${ledgerBalanceProjections.balance} >= ${entry.amount}`
-              : sql`true`
-          )
-        );
-
-      if (updated.rowCount !== 1) {
-        throw new Error(`Insufficient wallet balance for ledger account ${entry.accountId}`);
-      }
-    }
-
-    return { transactionId: input.transactionId, idempotent: false };
+  await db.insert(idempotencyKeys).values({
+    key: input.idempotencyKey,
+    operation: "ledger.post_journal",
+    requestHash: hash,
+    expiresAt: sql`now() + interval '24 hours'`
   });
+
+  const transactionValues = {
+    id: input.transactionId,
+    idempotencyKey: input.idempotencyKey,
+    referenceType: input.referenceType,
+    metadata: input.metadata ?? {}
+  };
+
+  await db.insert(journalTransactions).values(
+    input.referenceId === undefined
+      ? transactionValues
+      : { ...transactionValues, referenceId: input.referenceId }
+  );
+
+  await db.insert(journalEntries).values(
+    input.entries.map((entry, sequence) => ({
+      id: randomUUID(),
+      transactionId: input.transactionId,
+      accountId: entry.accountId,
+      direction: entry.direction,
+      amount: entry.amount,
+      sequence
+    }))
+  );
+
+  // The projection is deliberately limited to customer wallet accounts.
+  // Other ledger account types can have different accounting sign semantics.
+  const accountIds = [...new Set(input.entries.map((entry) => entry.accountId))];
+  const accounts = await db
+    .select({ id: ledgerAccounts.id, accountType: ledgerAccounts.accountType })
+    .from(ledgerAccounts)
+    .where(inArray(ledgerAccounts.id, accountIds));
+  const accountTypes = new Map(accounts.map((account) => [account.id, account.accountType]));
+
+  for (const entry of input.entries) {
+    if (!accountTypes.get(entry.accountId)?.startsWith("USER_")) continue;
+
+    await db
+      .insert(ledgerBalanceProjections)
+      .values({ accountId: entry.accountId, balance: "0" })
+      .onConflictDoNothing({ target: ledgerBalanceProjections.accountId });
+
+    const updated = await db
+      .update(ledgerBalanceProjections)
+      .set({
+        balance:
+          entry.direction === "debit"
+            ? sql`${ledgerBalanceProjections.balance} - ${entry.amount}`
+            : sql`${ledgerBalanceProjections.balance} + ${entry.amount}`,
+        version: sql`${ledgerBalanceProjections.version} + 1`,
+        updatedAt: sql`now()`
+      })
+      .where(
+        and(
+          eq(ledgerBalanceProjections.accountId, entry.accountId),
+          entry.direction === "debit"
+            ? sql`${ledgerBalanceProjections.balance} >= ${entry.amount}`
+            : sql`true`
+        )
+      );
+
+    if (updated.rowCount !== 1) {
+      throw new Error(`Insufficient wallet balance for ledger account ${entry.accountId}`);
+    }
+  }
+
+  return { transactionId: input.transactionId, idempotent: false };
+}
+
+/** Atomically posts an immutable double-entry journal transaction. */
+export async function postJournal(
+  db: TradeSharkDatabase,
+  input: PostJournalInput
+): Promise<{ transactionId: string; idempotent: boolean }> {
+  return db.transaction((tx) => postJournalInTransaction(tx, input));
 }
