@@ -19,7 +19,7 @@ export type LedgerPosting = {
   amount: string;
 };
 
-type PostJournalInput = {
+export type PostJournalInput = {
   transactionId: string;
   idempotencyKey: string;
   referenceType: string;
