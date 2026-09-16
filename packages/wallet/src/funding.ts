@@ -282,3 +282,201 @@ export async function submitWithdrawalAtomically(
     return result;
   });
 }
+
+/**
+ * Finalizes an externally submitted withdrawal. This records the movement out
+ * of the customer's pending-withdrawal account into the platform's external
+ * settlement account and advances submitted -> confirmed in one transaction.
+ */
+export async function confirmWithdrawalAtomically(
+  db: TradeSharkDatabase,
+  withdrawalId: string
+): Promise<{ transactionId: string; idempotent: boolean }> {
+  return db.transaction(async (tx) => {
+    const rows = await tx
+      .select({
+        id: withdrawals.id,
+        userId: withdrawals.userId,
+        assetId: withdrawals.assetId,
+        pendingAccountId: withdrawals.pendingAccountId,
+        amount: withdrawals.amount,
+        status: withdrawals.status
+      })
+      .from(withdrawals)
+      .where(eq(withdrawals.id, withdrawalId))
+      .limit(1);
+
+    const withdrawal = rows[0];
+    if (!withdrawal) throw new Error(`Withdrawal ${withdrawalId} was not found`);
+
+    const idempotencyKey = `withdrawal:${withdrawal.id}:confirm`;
+    if (withdrawal.status === "confirmed") {
+      return {
+        transactionId: await findJournalTransactionId(tx, idempotencyKey),
+        idempotent: true
+      };
+    }
+    if (withdrawal.status !== "submitted") {
+      throw new Error(`Withdrawal ${withdrawalId} must be submitted before confirmation`);
+    }
+
+    const pendingRows = await tx
+      .select({
+        id: ledgerAccounts.id,
+        userId: ledgerAccounts.userId,
+        assetId: ledgerAccounts.assetId,
+        accountType: ledgerAccounts.accountType
+      })
+      .from(ledgerAccounts)
+      .where(eq(ledgerAccounts.id, withdrawal.pendingAccountId))
+      .limit(1);
+
+    const pending = pendingRows[0];
+    if (
+      !pending ||
+      pending.accountType !== "USER_PENDING_WITHDRAWAL" ||
+      pending.userId !== withdrawal.userId ||
+      pending.assetId !== withdrawal.assetId
+    ) {
+      throw new Error("Withdrawal pending ledger account does not match the withdrawal");
+    }
+
+    const externalRows = await tx
+      .select({ id: ledgerAccounts.id, accountType: ledgerAccounts.accountType })
+      .from(ledgerAccounts)
+      .where(
+        and(
+          eq(ledgerAccounts.assetId, withdrawal.assetId),
+          eq(ledgerAccounts.accountType, "EXTERNAL_SETTLEMENT")
+        )
+      )
+      .limit(1);
+
+    const external = externalRows[0];
+    if (!external || external.accountType !== "EXTERNAL_SETTLEMENT") {
+      throw new Error("Required EXTERNAL_SETTLEMENT ledger account does not exist");
+    }
+
+    const result = await postJournalInTransaction(tx, {
+      transactionId: randomUUID(),
+      idempotencyKey,
+      referenceType: "withdrawal_external_settlement",
+      referenceId: withdrawal.id,
+      entries: [
+        { accountId: pending.id, direction: "debit", amount: withdrawal.amount },
+        { accountId: external.id, direction: "credit", amount: withdrawal.amount }
+      ]
+    });
+
+    const updated = await tx
+      .update(withdrawals)
+      .set({ status: "confirmed", confirmedAt: new Date(), updatedAt: new Date() })
+      .where(and(eq(withdrawals.id, withdrawal.id), eq(withdrawals.status, "submitted")))
+      .returning({ id: withdrawals.id });
+
+    if (updated.length !== 1) {
+      throw new Error("Withdrawal lifecycle changed while external settlement was being recorded");
+    }
+
+    return result;
+  });
+}
+
+/**
+ * Fails an in-flight withdrawal and atomically releases any customer funds
+ * still held on the platform. For submitted withdrawals, the release comes
+ * from USER_PENDING_WITHDRAWAL because the external settlement has not
+ * completed successfully.
+ */
+export async function failWithdrawalAtomically(
+  db: TradeSharkDatabase,
+  withdrawalId: string
+): Promise<{ transactionId: string; idempotent: boolean }> {
+  return db.transaction(async (tx) => {
+    const rows = await tx
+      .select({
+        id: withdrawals.id,
+        userId: withdrawals.userId,
+        assetId: withdrawals.assetId,
+        pendingAccountId: withdrawals.pendingAccountId,
+        amount: withdrawals.amount,
+        status: withdrawals.status
+      })
+      .from(withdrawals)
+      .where(eq(withdrawals.id, withdrawalId))
+      .limit(1);
+
+    const withdrawal = rows[0];
+    if (!withdrawal) throw new Error(`Withdrawal ${withdrawalId} was not found`);
+    if (withdrawal.status === "failed") {
+      const idempotencyKey = `withdrawal:${withdrawal.id}:fail`;
+      return {
+        transactionId: await findJournalTransactionId(tx, idempotencyKey),
+        idempotent: true
+      };
+    }
+    if (!["pending", "approved", "submitted"].includes(withdrawal.status)) {
+      throw new Error(`Withdrawal ${withdrawalId} cannot be failed from ${withdrawal.status}`);
+    }
+
+    const idempotencyKey = `withdrawal:${withdrawal.id}:fail`;
+    const sourceType = withdrawal.status === "submitted" ? "USER_PENDING_WITHDRAWAL" : "USER_LOCKED";
+    const sourceRows = await tx
+      .select({ id: ledgerAccounts.id, accountType: ledgerAccounts.accountType })
+      .from(ledgerAccounts)
+      .where(
+        and(
+          eq(ledgerAccounts.userId, withdrawal.userId),
+          eq(ledgerAccounts.assetId, withdrawal.assetId),
+          eq(ledgerAccounts.accountType, sourceType)
+        )
+      )
+      .limit(1);
+
+    const source = sourceRows[0];
+    const availableRows = await tx
+      .select({ id: ledgerAccounts.id, accountType: ledgerAccounts.accountType })
+      .from(ledgerAccounts)
+      .where(
+        and(
+          eq(ledgerAccounts.userId, withdrawal.userId),
+          eq(ledgerAccounts.assetId, withdrawal.assetId),
+          eq(ledgerAccounts.accountType, "USER_AVAILABLE")
+        )
+      )
+      .limit(1);
+
+    const available = availableRows[0];
+    if (!source || source.accountType !== sourceType || !available) {
+      throw new Error("Required withdrawal failure-release ledger accounts do not exist");
+    }
+
+    const result = await postJournalInTransaction(tx, {
+      transactionId: randomUUID(),
+      idempotencyKey,
+      referenceType: "withdrawal_failure_release",
+      referenceId: withdrawal.id,
+      entries: [
+        { accountId: source.id, direction: "debit", amount: withdrawal.amount },
+        { accountId: available.id, direction: "credit", amount: withdrawal.amount }
+      ]
+    });
+
+    const updated = await tx
+      .update(withdrawals)
+      .set({ status: "failed", failureReason: "withdrawal_failed", updatedAt: new Date() })
+      .where(
+        and(
+          eq(withdrawals.id, withdrawal.id),
+          inArray(withdrawals.status, ["pending", "approved", "submitted"])
+        )
+      )
+      .returning({ id: withdrawals.id });
+
+    if (updated.length !== 1) {
+      throw new Error("Withdrawal lifecycle changed while failure release was being applied");
+    }
+
+    return result;
+  });
+}
