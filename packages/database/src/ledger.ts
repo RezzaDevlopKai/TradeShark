@@ -57,8 +57,22 @@ export function validateJournalEntries(entries: LedgerPosting[]): void {
 
   let debitTotal = 0n;
   let creditTotal = 0n;
+  const accountIds = new Set<string>();
 
   for (const entry of entries) {
+    if (!entry.accountId.trim()) {
+      throw new Error("Journal posting accountId is required");
+    }
+
+    if (accountIds.has(entry.accountId)) {
+      throw new Error(`Journal transaction contains duplicate account ${entry.accountId}`);
+    }
+    accountIds.add(entry.accountId);
+
+    if (entry.direction !== "debit" && entry.direction !== "credit") {
+      throw new Error(`Invalid journal posting direction: ${entry.direction}`);
+    }
+
     const amount = toScaledInteger(entry.amount);
     if (amount <= 0n) {
       throw new Error("Journal posting amounts must be positive");
