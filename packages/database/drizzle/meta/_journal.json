@@ -15,6 +15,13 @@
       "when": 1789592401000,
       "tag": "0001_funding_lifecycle",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1789592402000,
+      "tag": "0002_trading_order_lifecycle",
+      "breakpoints": true
     }
   ]
 }
