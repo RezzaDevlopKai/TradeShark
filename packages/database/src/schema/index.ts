@@ -120,14 +120,19 @@ export const orders = pgTable("orders", {
   side: orderSide("side").notNull(),
   status: orderStatus("status").notNull().default("pending"),
   quantity: numeric("quantity", { precision: 38, scale: 18 }).notNull(),
+  remainingQuantity: numeric("remaining_quantity", { precision: 38, scale: 18 }).notNull(),
   limitPrice: numeric("limit_price", { precision: 38, scale: 18 }),
   feeRate: numeric("fee_rate", { precision: 20, scale: 10 }).notNull().default("0.0055"),
   clientOrderId: text("client_order_id").notNull(),
+  sequence: integer("sequence").notNull().default(sql`nextval('orders_sequence_seq')`),
   ...timestamps
 }, (table) => ({
   clientOrderUq: uniqueIndex("orders_user_client_order_uq").on(table.userId, table.clientOrderId),
+  sequenceUq: uniqueIndex("orders_sequence_uq").on(table.sequence),
   userIdx: index("orders_user_idx").on(table.userId, table.createdAt),
+  marketBookIdx: index("orders_market_book_idx").on(table.marketId, table.status, table.side, table.sequence),
   quantityCheck: check("orders_quantity_positive", sql`${table.quantity} > 0`),
+  remainingQuantityCheck: check("orders_remaining_quantity_valid", sql`${table.remainingQuantity} > 0 AND ${table.remainingQuantity} <= ${table.quantity}`),
   limitPriceCheck: check("orders_limit_price_positive", sql`${table.limitPrice} IS NULL OR ${table.limitPrice} > 0`)
 }));
 
