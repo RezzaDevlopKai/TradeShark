@@ -43,6 +43,16 @@ function parseDecimal(value: string, field: string): bigint {
   return scaled;
 }
 
+function parseNonNegativeDecimal(value: string, field: string): bigint {
+  if (!/^(?:0|[1-9]\d*)(?:\.\d{1,18})?$/.test(value)) {
+    throw new Error(`${field} must be a non-negative decimal with at most 18 decimals`);
+  }
+  const parts = value.split(".");
+  const whole = parts[0] ?? "";
+  const fraction = parts[1] ?? "";
+  return BigInt(whole) * SCALE_FACTOR + BigInt(fraction.padEnd(SCALE, "0") || "0");
+}
+
 function formatDecimal(value: bigint): string {
   if (value < 0n) throw new Error("decimal value cannot be negative");
   const whole = value / SCALE_FACTOR;
@@ -60,7 +70,7 @@ export function validateLimitOrder(order: LimitOrder): void {
   parseDecimal(order.price, "price");
   const quantity = parseDecimal(order.quantity, "quantity");
   if (order.remainingQuantity !== undefined) {
-    const remaining = parseDecimal(order.remainingQuantity, "remainingQuantity");
+    const remaining = parseNonNegativeDecimal(order.remainingQuantity, "remainingQuantity");
     if (remaining > quantity) throw new Error("remainingQuantity cannot exceed quantity");
   }
   if (!Number.isSafeInteger(order.sequence) || order.sequence < 0) {
@@ -69,7 +79,7 @@ export function validateLimitOrder(order: LimitOrder): void {
 }
 
 function remaining(order: LimitOrder): bigint {
-  return parseDecimal(order.remainingQuantity ?? order.quantity, "remainingQuantity");
+  return parseNonNegativeDecimal(order.remainingQuantity ?? order.quantity, "remainingQuantity");
 }
 
 function compareBigInt(a: bigint, b: bigint): number {
