@@ -125,8 +125,8 @@ export async function postJournalInTransaction(
   const hash = requestHash(input);
 
   // Insert-first + conflict-ignore closes the check-then-insert race when two
-  // concurrent callers use the same idempotency key. The winner owns the row;
-  // every caller then reads the canonical request hash and journal transaction.
+  // concurrent callers use the same idempotency key. The row is then locked so
+  // the winner completes its journal before another caller can proceed.
   await db.insert(idempotencyKeys).values({
     key: input.idempotencyKey,
     operation: "ledger.post_journal",
@@ -138,6 +138,7 @@ export async function postJournalInTransaction(
     .select({ requestHash: idempotencyKeys.requestHash })
     .from(idempotencyKeys)
     .where(eq(idempotencyKeys.key, input.idempotencyKey))
+    .for("update")
     .limit(1);
 
   if (existing.length === 0 || existing[0]!.requestHash !== hash) {
@@ -161,29 +162,11 @@ export async function postJournalInTransaction(
     metadata: input.metadata ?? {}
   };
 
-  // A concurrent caller with the same idempotency key may have passed the
-  // read above before the winning journal was committed. Conflict-ignore on
-  // the journal's unique idempotency key lets that caller converge on the
-  // canonical transaction instead of failing on a unique-constraint error.
   await db.insert(journalTransactions).values(
     input.referenceId === undefined
       ? transactionValues
       : { ...transactionValues, referenceId: input.referenceId }
-  ).onConflictDoNothing({ target: journalTransactions.idempotencyKey });
-
-  const persisted = await db
-    .select({ transactionId: journalTransactions.id })
-    .from(journalTransactions)
-    .where(eq(journalTransactions.idempotencyKey, input.idempotencyKey))
-    .limit(1);
-
-  if (persisted.length > 0) {
-    if (persisted[0]!.transactionId !== input.transactionId) {
-      return { transactionId: persisted[0]!.transactionId, idempotent: true };
-    }
-  } else {
-    throw new Error("Journal transaction could not be persisted for idempotency key");
-  }
+  );
 
   await db.insert(journalEntries).values(
     input.entries.map((entry, sequence) => ({
