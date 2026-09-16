@@ -72,9 +72,7 @@ export async function creditDepositAtomically(
         accountType: ledgerAccounts.accountType
       })
       .from(ledgerAccounts)
-      .where(
-        inArray(ledgerAccounts.id, [deposit.pendingAccountId])
-      )
+      .where(inArray(ledgerAccounts.id, [deposit.pendingAccountId]))
       .limit(1);
 
     const pending = accounts[0];
@@ -123,6 +121,83 @@ export async function creditDepositAtomically(
 
     if (updated.length !== 1) {
       throw new Error("Deposit lifecycle changed while ledger settlement was being applied");
+    }
+
+    return result;
+  });
+}
+
+/**
+ * Locks available customer funds when a withdrawal enters the pending state.
+ * The lifecycle update and ledger movement share one transaction.
+ */
+export async function requestWithdrawalAtomically(
+  db: TradeSharkDatabase,
+  withdrawalId: string
+): Promise<{ transactionId: string; idempotent: boolean }> {
+  return db.transaction(async (tx) => {
+    const rows = await tx
+      .select({
+        id: withdrawals.id,
+        userId: withdrawals.userId,
+        assetId: withdrawals.assetId,
+        amount: withdrawals.amount,
+        status: withdrawals.status
+      })
+      .from(withdrawals)
+      .where(eq(withdrawals.id, withdrawalId))
+      .limit(1);
+
+    const withdrawal = rows[0];
+    if (!withdrawal) throw new Error(`Withdrawal ${withdrawalId} was not found`);
+
+    const idempotencyKey = `withdrawal:${withdrawal.id}:lock`;
+    if (withdrawal.status === "pending") {
+      return {
+        transactionId: await findJournalTransactionId(tx, idempotencyKey),
+        idempotent: true
+      };
+    }
+    if (withdrawal.status !== "requested") {
+      throw new Error(`Withdrawal ${withdrawalId} must be requested before funds can be locked`);
+    }
+
+    const accounts = await tx
+      .select({ id: ledgerAccounts.id, accountType: ledgerAccounts.accountType })
+      .from(ledgerAccounts)
+      .where(
+        and(
+          eq(ledgerAccounts.userId, withdrawal.userId),
+          eq(ledgerAccounts.assetId, withdrawal.assetId),
+          inArray(ledgerAccounts.accountType, ["USER_AVAILABLE", "USER_LOCKED"])
+        )
+      );
+
+    const available = accounts.find((account) => account.accountType === "USER_AVAILABLE");
+    const locked = accounts.find((account) => account.accountType === "USER_LOCKED");
+    if (!available || !locked) {
+      throw new Error("Required USER_AVAILABLE and USER_LOCKED ledger accounts do not exist");
+    }
+
+    const result = await postJournalInTransaction(tx, {
+      transactionId: randomUUID(),
+      idempotencyKey,
+      referenceType: "withdrawal_lock",
+      referenceId: withdrawal.id,
+      entries: [
+        { accountId: available.id, direction: "debit", amount: withdrawal.amount },
+        { accountId: locked.id, direction: "credit", amount: withdrawal.amount }
+      ]
+    });
+
+    const updated = await tx
+      .update(withdrawals)
+      .set({ status: "pending", updatedAt: new Date() })
+      .where(and(eq(withdrawals.id, withdrawal.id), eq(withdrawals.status, "requested")))
+      .returning({ id: withdrawals.id });
+
+    if (updated.length !== 1) {
+      throw new Error("Withdrawal lifecycle changed while funds were being locked");
     }
 
     return result;
