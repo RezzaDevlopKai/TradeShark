@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="description" content="TradeShark trading terminal preview." />
+    <link rel="stylesheet" href="./styles.css" />
+    <title>Trading Terminal — TradeShark</title>
+  </head>
+  <body>
+    <div class="shell">
+      <header class="nav">
+        <a class="brand" href="./"><span class="brand-mark">TS</span><span>TradeShark</span></a>
+        <nav aria-label="Primary navigation"><a href="./markets.html">Markets</a><a href="./intelligence.html">Intelligence</a><a href="./mayhem.html">Mayhem</a></nav>
+        <button class="ghost-button" type="button" data-action="future-mode">Future Mode</button>
+      </header>
+      <main>
+        <section class="section"><p class="eyebrow">TRADING TERMINAL / 04</p><h1>One screen.<br /><em>Full context.</em></h1><p class="hero-text">The terminal shell is ready for live market data, order-book state, balances and authenticated execution once the API layer is connected.</p></section>
+        <section class="feature-grid section">
+          <article class="feature-card featured"><p class="eyebrow">BTC / USD</p><h2>$104,821.42</h2><p class="up">+2.84% preview</p><div class="chart" aria-hidden="true"><svg viewBox="0 0 500 190" preserveAspectRatio="none"><path d="M0 155 C35 150 48 128 76 138 S118 115 145 125 S185 92 212 105 S250 75 280 94 S315 50 342 68 S380 38 407 57 S447 26 500 17" fill="none" stroke="currentColor" stroke-width="4" vector-effect="non-scaling-stroke"/></svg></div></article>
+          <article class="feature-card"><p class="eyebrow">ORDER FORM</p><h2>Limit order.</h2><p>BUY / SELL controls will submit validated orders through the API. No client-side balance assumptions will authorize execution.</p><a href="./markets.html">Review markets →</a></article>
+          <article class="feature-card"><p class="eyebrow">ACCOUNT</p><h2>Balances<br />coming next.</h2><p>Available and locked balances will be displayed from the ledger-backed account projection.</p></article>
+        </section>
+      </main>
+      <footer><span>© 2026 TradeShark</span><span>Execution is intentionally disabled in this prototype.</span></footer>
+    </div>
+    <script type="module" src="./app.js"></script>
+  </body>
+</html>
