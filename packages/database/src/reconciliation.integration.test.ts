@@ -20,8 +20,10 @@ integration("PostgreSQL ledger reconciliation integration", () => {
     const assetId = randomUUID();
     const userAccountId = randomUUID();
     const treasuryAccountId = randomUUID();
-    const transactionId = randomUUID();
-    const idempotencyKey = `integration:reconciliation:${randomUUID()}`;
+    const openingTransactionId = randomUUID();
+    const openingKey = `integration:reconciliation:opening:${randomUUID()}`;
+    const movementTransactionId = randomUUID();
+    const movementKey = `integration:reconciliation:movement:${randomUUID()}`;
 
     try {
       await client.pool.query(`INSERT INTO users (id, email, username) VALUES ($1, $2, $3)`, [
@@ -44,15 +46,21 @@ integration("PostgreSQL ledger reconciliation integration", () => {
           `integration-reconciliation-treasury:${treasuryAccountId}`
         ]
       );
-      await client.pool.query(
-        `INSERT INTO ledger_balance_projections (account_id, balance) VALUES ($1, '25.125000000000000001')`,
-        [userAccountId]
-      );
 
       await postJournal(client.db, {
-        transactionId,
-        idempotencyKey,
-        referenceType: "integration_reconciliation_test",
+        transactionId: openingTransactionId,
+        idempotencyKey: openingKey,
+        referenceType: "integration_reconciliation_opening",
+        entries: [
+          { accountId: treasuryAccountId, direction: "debit", amount: "25.125000000000000001" },
+          { accountId: userAccountId, direction: "credit", amount: "25.125000000000000001" }
+        ]
+      });
+
+      await postJournal(client.db, {
+        transactionId: movementTransactionId,
+        idempotencyKey: movementKey,
+        referenceType: "integration_reconciliation_movement",
         entries: [
           { accountId: userAccountId, direction: "debit", amount: "10.125000000000000001" },
           { accountId: treasuryAccountId, direction: "credit", amount: "10.125000000000000001" }
@@ -63,14 +71,25 @@ integration("PostgreSQL ledger reconciliation integration", () => {
       expect(reconciled).toEqual({
         accountId: userAccountId,
         projectedBalance: "15.000000000000000000",
-        ledgerBalance: "-10.125000000000000001",
-        difference: "25.125000000000000001",
-        consistent: false
+        ledgerBalance: "15.000000000000000000",
+        difference: "0",
+        consistent: true
       });
+
+      await client.pool.query(
+        `UPDATE ledger_balance_projections SET balance = '15.000000000000000000' - 0.000000000000000001 WHERE account_id = $1`,
+        [userAccountId]
+      );
+
+      const corrupted = await reconcileLedgerBalance(client.db, userAccountId);
+      expect(corrupted.projectedBalance).toBe("14.999999999999999999");
+      expect(corrupted.ledgerBalance).toBe("15.000000000000000000");
+      expect(corrupted.difference).toBe("-0.000000000000000001");
+      expect(corrupted.consistent).toBe(false);
     } finally {
-      await client.pool.query(`DELETE FROM journal_entries WHERE transaction_id = $1`, [transactionId]);
-      await client.pool.query(`DELETE FROM journal_transactions WHERE idempotency_key = $1`, [idempotencyKey]);
-      await client.pool.query(`DELETE FROM idempotency_keys WHERE key = $1`, [idempotencyKey]);
+      await client.pool.query(`DELETE FROM journal_entries WHERE transaction_id IN ($1, $2)`, [openingTransactionId, movementTransactionId]);
+      await client.pool.query(`DELETE FROM journal_transactions WHERE idempotency_key IN ($1, $2)`, [openingKey, movementKey]);
+      await client.pool.query(`DELETE FROM idempotency_keys WHERE key IN ($1, $2)`, [openingKey, movementKey]);
       await client.pool.query(`DELETE FROM ledger_balance_projections WHERE account_id = $1`, [userAccountId]);
       await client.pool.query(`DELETE FROM ledger_accounts WHERE id IN ($1, $2)`, [userAccountId, treasuryAccountId]);
       await client.pool.query(`DELETE FROM assets WHERE id = $1`, [assetId]);
