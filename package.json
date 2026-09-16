@@ -1,0 +1,17 @@
+{
+  "name": "tradeshark",
+  "version": "0.1.0",
+  "private": true,
+  "description": "TradeShark trading platform monorepo",
+  "packageManager": "pnpm@10.15.0",
+  "engines": {
+    "node": ">=22 <23"
+  },
+  "scripts": {
+    "build": "pnpm -r build",
+    "dev": "pnpm -r --parallel dev",
+    "lint": "pnpm -r lint",
+    "test": "pnpm -r test",
+    "typecheck": "pnpm -r typecheck"
+  }
+}
