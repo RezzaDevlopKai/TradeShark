@@ -1,11 +1,10 @@
-import { createHash } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { eq, sql } from "drizzle-orm";
 import type { TradeSharkDatabase } from "./client.js";
 import { idempotencyKeys, journalEntries, journalTransactions } from "./schema/index.js";
 
 const SCALE = 18n;
-const TEN = 10n;
-const TEN_TO_SCALE = TEN ** SCALE;
+const TEN_TO_SCALE = 10n ** SCALE;
 
 type LedgerPosting = {
   accountId: string;
@@ -33,8 +32,7 @@ function toScaledInteger(value: string): bigint {
     throw new Error(`Amount exceeds ${SCALE} decimal places: ${value}`);
   }
 
-  const paddedFraction = fraction.padEnd(Number(SCALE), "0");
-  return BigInt(whole) * TEN_TO_SCALE + BigInt(paddedFraction || "0");
+  return BigInt(whole) * TEN_TO_SCALE + BigInt(fraction.padEnd(Number(SCALE), "0") || "0");
 }
 
 function requestHash(input: PostJournalInput): string {
@@ -49,14 +47,11 @@ function requestHash(input: PostJournalInput): string {
 }
 
 /**
- * Posts an immutable double-entry journal transaction.
+ * Atomically posts an immutable double-entry journal transaction.
  *
- * Invariants enforced here:
- * - at least two postings
- * - every amount is strictly positive
- * - total debits exactly equal total credits using integer arithmetic
- * - idempotency key can only represent one request payload
- * - journal transaction and entries commit atomically
+ * The service deliberately does not calculate user balances with JavaScript
+ * floating point arithmetic. Financial values cross the API boundary as
+ * decimal strings and are validated here with fixed 18-decimal integer math.
  */
 export async function postJournal(
   db: TradeSharkDatabase,
@@ -81,7 +76,7 @@ export async function postJournal(
 
   return db.transaction(async (tx) => {
     const existing = await tx
-      .select({ key: idempotencyKeys.key, requestHash: idempotencyKeys.requestHash })
+      .select({ requestHash: idempotencyKeys.requestHash })
       .from(idempotencyKeys)
       .where(eq(idempotencyKeys.key, input.idempotencyKey))
       .limit(1);
@@ -90,7 +85,18 @@ export async function postJournal(
       if (existing[0]!.requestHash !== hash) {
         throw new Error("Idempotency key was already used with a different request");
       }
-      return { transactionId: input.transactionId, idempotent: true };
+
+      const original = await tx
+        .select({ transactionId: journalTransactions.id })
+        .from(journalTransactions)
+        .where(eq(journalTransactions.idempotencyKey, input.idempotencyKey))
+        .limit(1);
+
+      if (original.length === 0) {
+        throw new Error("Idempotency record exists without its journal transaction");
+      }
+
+      return { transactionId: original[0]!.transactionId, idempotent: true };
     }
 
     await tx.insert(idempotencyKeys).values({
@@ -100,17 +106,22 @@ export async function postJournal(
       expiresAt: sql`now() + interval '24 hours'`
     });
 
-    await tx.insert(journalTransactions).values({
+    const transactionValues = {
       id: input.transactionId,
       idempotencyKey: input.idempotencyKey,
       referenceType: input.referenceType,
-      referenceId: input.referenceId,
       metadata: input.metadata ?? {}
-    });
+    };
+
+    await tx.insert(journalTransactions).values(
+      input.referenceId === undefined
+        ? transactionValues
+        : { ...transactionValues, referenceId: input.referenceId }
+    );
 
     await tx.insert(journalEntries).values(
       input.entries.map((entry, sequence) => ({
-        id: cryptoRandomId(),
+        id: randomUUID(),
         transactionId: input.transactionId,
         accountId: entry.accountId,
         direction: entry.direction,
@@ -121,10 +132,4 @@ export async function postJournal(
 
     return { transactionId: input.transactionId, idempotent: false };
   });
-}
-
-function cryptoRandomId(): string {
-  // IDs are supplied by the application as UUIDv7. This fallback keeps the
-  // database package dependency-light; production callers should pass UUIDv7 IDs.
-  return crypto.randomUUID();
 }
