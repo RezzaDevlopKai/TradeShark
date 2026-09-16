@@ -1,6 +1,6 @@
 -- TradeShark trading order invariants.
 -- Filled orders must be allowed to reach zero remaining quantity.
--- The sequence is advanced past existing rows so future inserts cannot collide.
+-- Keep the order sequence at a valid PostgreSQL value even when the table is empty.
 
 ALTER TABLE orders
   DROP CONSTRAINT IF EXISTS orders_remaining_quantity_valid;
@@ -11,6 +11,6 @@ ALTER TABLE orders
 
 SELECT setval(
   'orders_sequence_seq',
-  COALESCE((SELECT MAX(sequence) FROM orders), 0),
+  GREATEST(COALESCE((SELECT MAX(sequence) FROM orders), 0), 1),
   true
 );
