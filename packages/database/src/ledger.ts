@@ -161,11 +161,29 @@ export async function postJournalInTransaction(
     metadata: input.metadata ?? {}
   };
 
+  // A concurrent caller with the same idempotency key may have passed the
+  // read above before the winning journal was committed. Conflict-ignore on
+  // the journal's unique idempotency key lets that caller converge on the
+  // canonical transaction instead of failing on a unique-constraint error.
   await db.insert(journalTransactions).values(
     input.referenceId === undefined
       ? transactionValues
       : { ...transactionValues, referenceId: input.referenceId }
-  );
+  ).onConflictDoNothing({ target: journalTransactions.idempotencyKey });
+
+  const persisted = await db
+    .select({ transactionId: journalTransactions.id })
+    .from(journalTransactions)
+    .where(eq(journalTransactions.idempotencyKey, input.idempotencyKey))
+    .limit(1);
+
+  if (persisted.length > 0) {
+    if (persisted[0]!.transactionId !== input.transactionId) {
+      return { transactionId: persisted[0]!.transactionId, idempotent: true };
+    }
+  } else {
+    throw new Error("Journal transaction could not be persisted for idempotency key");
+  }
 
   await db.insert(journalEntries).values(
     input.entries.map((entry, sequence) => ({
