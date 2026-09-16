@@ -3,10 +3,28 @@ import { and, eq, inArray } from "drizzle-orm";
 import type { TradeSharkDatabase } from "@tradeshark/database";
 import {
   deposits,
+  journalTransactions,
   ledgerAccounts,
   postJournalInTransaction,
   withdrawals
 } from "@tradeshark/database";
+
+async function findJournalTransactionId(
+  db: Pick<TradeSharkDatabase, "select">,
+  idempotencyKey: string
+): Promise<string> {
+  const rows = await db
+    .select({ id: journalTransactions.id })
+    .from(journalTransactions)
+    .where(eq(journalTransactions.idempotencyKey, idempotencyKey))
+    .limit(1);
+
+  const journal = rows[0];
+  if (!journal) {
+    throw new Error(`Ledger journal for ${idempotencyKey} was not found`);
+  }
+  return journal.id;
+}
 
 /**
  * Atomically settles a confirmed deposit into USER_AVAILABLE.
@@ -34,15 +52,43 @@ export async function creditDepositAtomically(
 
     const deposit = rows[0];
     if (!deposit) throw new Error(`Deposit ${depositId} was not found`);
+
+    const idempotencyKey = `deposit:${deposit.id}:credit`;
     if (deposit.status === "credited") {
-      return { transactionId: deposit.id, idempotent: true };
+      return {
+        transactionId: await findJournalTransactionId(tx, idempotencyKey),
+        idempotent: true
+      };
     }
     if (deposit.status !== "confirmed") {
       throw new Error(`Deposit ${depositId} must be confirmed before crediting`);
     }
 
+    const accounts = await tx
+      .select({
+        id: ledgerAccounts.id,
+        userId: ledgerAccounts.userId,
+        assetId: ledgerAccounts.assetId,
+        accountType: ledgerAccounts.accountType
+      })
+      .from(ledgerAccounts)
+      .where(
+        inArray(ledgerAccounts.id, [deposit.pendingAccountId])
+      )
+      .limit(1);
+
+    const pending = accounts[0];
+    if (
+      !pending ||
+      pending.accountType !== "USER_PENDING_DEPOSIT" ||
+      pending.userId !== deposit.userId ||
+      pending.assetId !== deposit.assetId
+    ) {
+      throw new Error("Deposit pending ledger account does not match the deposit");
+    }
+
     const availableRows = await tx
-      .select({ id: ledgerAccounts.id })
+      .select({ id: ledgerAccounts.id, accountType: ledgerAccounts.accountType })
       .from(ledgerAccounts)
       .where(
         and(
@@ -54,11 +100,13 @@ export async function creditDepositAtomically(
       .limit(1);
 
     const available = availableRows[0];
-    if (!available) throw new Error("Required USER_AVAILABLE ledger account does not exist");
+    if (!available || available.accountType !== "USER_AVAILABLE") {
+      throw new Error("Required USER_AVAILABLE ledger account does not exist");
+    }
 
     const result = await postJournalInTransaction(tx, {
       transactionId: randomUUID(),
-      idempotencyKey: `deposit:${deposit.id}:credit`,
+      idempotencyKey,
       referenceType: "deposit_credit",
       referenceId: deposit.id,
       entries: [
@@ -106,8 +154,13 @@ export async function submitWithdrawalAtomically(
 
     const withdrawal = rows[0];
     if (!withdrawal) throw new Error(`Withdrawal ${withdrawalId} was not found`);
+
+    const idempotencyKey = `withdrawal:${withdrawal.id}:submit`;
     if (withdrawal.status === "submitted") {
-      return { transactionId: withdrawal.id, idempotent: true };
+      return {
+        transactionId: await findJournalTransactionId(tx, idempotencyKey),
+        idempotent: true
+      };
     }
     if (withdrawal.status !== "approved") {
       throw new Error(`Withdrawal ${withdrawalId} must be approved before submission`);
@@ -132,7 +185,7 @@ export async function submitWithdrawalAtomically(
 
     const result = await postJournalInTransaction(tx, {
       transactionId: randomUUID(),
-      idempotencyKey: `withdrawal:${withdrawal.id}:submit`,
+      idempotencyKey,
       referenceType: "withdrawal_pending",
       referenceId: withdrawal.id,
       entries: [
