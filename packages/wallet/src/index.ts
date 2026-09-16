@@ -8,6 +8,9 @@ import {
   postJournal
 } from "@tradeshark/database";
 
+export * from "./funding.js";
+export * from "./lifecycle.js";
+
 export type WalletBalance = {
   accountId: string;
   assetId: string;
