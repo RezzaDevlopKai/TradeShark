@@ -86,12 +86,13 @@ export async function placeLimitOrder(
 
     const existing = existingRows[0];
     if (existing) {
+      const existingFeeRate = normalizeDecimal(existing.feeRate);
       if (
         existing.marketId !== input.marketId ||
         existing.side !== input.side ||
         existing.quantity !== quantity ||
         existing.limitPrice !== price ||
-        existing.feeRate !== feeRate
+        existingFeeRate !== feeRate
       ) {
         throw new Error("clientOrderId was already used with a different order");
       }
@@ -108,7 +109,7 @@ export async function placeLimitOrder(
       const reservationAmount = existing.side === "buy"
         ? addDecimals(
             multiplyDecimals(existing.limitPrice ?? price, existing.quantity),
-            calculateFee(existing.limitPrice ?? price, existing.quantity, existing.feeRate)
+            calculateFee(existing.limitPrice ?? price, existing.quantity, existingFeeRate)
           )
         : existing.quantity;
 
@@ -129,7 +130,7 @@ export async function placeLimitOrder(
         quantity: existing.quantity,
         remainingQuantity: existing.remainingQuantity,
         limitPrice: existing.limitPrice ?? price,
-        feeRate: existing.feeRate,
+        feeRate: existingFeeRate,
         clientOrderId: existing.clientOrderId,
         sequence: existing.sequence,
         reservationAmount,
