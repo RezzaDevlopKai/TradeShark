@@ -3,6 +3,7 @@ import { and, eq, inArray } from "drizzle-orm";
 import type { TradeSharkDatabase } from "@tradeshark/database";
 import {
   assets,
+  journalTransactions,
   ledgerAccounts,
   markets,
   orders,
@@ -10,7 +11,8 @@ import {
 } from "@tradeshark/database";
 import { calculateFee, normalizeDecimal } from "./engine.js";
 
-const ZERO = "0.000000000000000000";
+const SCALE = 18n;
+const FACTOR = 10n ** SCALE;
 
 type PlaceLimitOrderInput = {
   userId: string;
@@ -29,7 +31,7 @@ export type PlacedOrder = {
   userId: string;
   marketId: string;
   side: "buy" | "sell";
-  status: "open";
+  status: "pending" | "open" | "partially_filled" | "filled" | "cancelled" | "rejected";
   quantity: string;
   remainingQuantity: string;
   limitPrice: string;
@@ -94,14 +96,6 @@ export async function placeLimitOrder(
         throw new Error("clientOrderId was already used with a different order");
       }
 
-      const reservationKey = `order:${existing.id}:reserve`;
-      const journalRows = await tx
-        .select({ id: orders.id })
-        .from(orders)
-        .where(eq(orders.id, existing.id))
-        .limit(1);
-      if (journalRows.length !== 1) throw new Error("Existing order could not be loaded");
-
       const marketRows = await tx
         .select({ baseAssetId: markets.baseAssetId, quoteAssetId: markets.quoteAssetId })
         .from(markets)
@@ -112,26 +106,37 @@ export async function placeLimitOrder(
 
       const reservationAssetId = existing.side === "buy" ? market.quoteAssetId : market.baseAssetId;
       const reservationAmount = existing.side === "buy"
-        ? addDecimals(multiplyDecimals(existing.quantity, existing.limitPrice ?? price), calculateFee(price, existing.quantity, feeRate))
+        ? addDecimals(
+            multiplyDecimals(existing.limitPrice ?? price, existing.quantity),
+            calculateFee(existing.limitPrice ?? price, existing.quantity, existing.feeRate)
+          )
         : existing.quantity;
-      const journal = await tx
-        .select({ id: orders.id })
-        .from(orders)
-        .where(eq(orders.id, existing.id))
-        .limit(1);
-      if (journal.length !== 1) throw new Error("Existing order could not be confirmed");
 
-      const transactionRows = await tx
-        .select({ id: ledgerAccounts.id })
-        .from(ledgerAccounts)
-        .where(eq(ledgerAccounts.id, existing.id))
+      const journalRows = await tx
+        .select({ id: journalTransactions.id })
+        .from(journalTransactions)
+        .where(eq(journalTransactions.idempotencyKey, `order:${existing.id}:reserve`))
         .limit(1);
+      const journal = journalRows[0];
+      if (!journal) throw new Error("Existing order reservation journal was not found");
 
-      void reservationKey;
-      void reservationAssetId;
-      void reservationAmount;
-      void transactionRows;
-      throw new Error("Existing order retry is not yet supported before reservation journal lookup");
+      return {
+        id: existing.id,
+        userId: existing.userId,
+        marketId: existing.marketId,
+        side: existing.side,
+        status: existing.status,
+        quantity: existing.quantity,
+        remainingQuantity: existing.remainingQuantity,
+        limitPrice: existing.limitPrice ?? price,
+        feeRate: existing.feeRate,
+        clientOrderId: existing.clientOrderId,
+        sequence: existing.sequence,
+        reservationAmount,
+        reservationAssetId,
+        reservationJournalTransactionId: journal.id,
+        idempotent: true
+      };
     }
 
     const marketRows = await tx
@@ -146,11 +151,10 @@ export async function placeLimitOrder(
     const market = marketRows[0];
     if (!market || !market.isActive) throw new Error("Trading market does not exist or is inactive");
 
-    const assetIds = [market.baseAssetId, market.quoteAssetId];
     const assetRows = await tx
       .select({ id: assets.id, isActive: assets.isActive })
       .from(assets)
-      .where(inArray(assets.id, assetIds));
+      .where(inArray(assets.id, [market.baseAssetId, market.quoteAssetId]));
     if (assetRows.length !== 2 || assetRows.some((asset) => !asset.isActive)) {
       throw new Error("Trading market assets must be active");
     }
@@ -191,7 +195,8 @@ export async function placeLimitOrder(
         marketId: input.marketId,
         userId: input.userId,
         side: input.side,
-        reservationAssetId
+        reservationAssetId,
+        reservationAmount
       },
       entries: [
         { accountId: available.id, direction: "debit", amount: reservationAmount },
@@ -213,10 +218,7 @@ export async function placeLimitOrder(
         feeRate,
         clientOrderId: input.clientOrderId
       })
-      .returning({
-        id: orders.id,
-        sequence: orders.sequence
-      });
+      .returning({ id: orders.id, sequence: orders.sequence });
 
     const order = inserted[0];
     if (!order) throw new Error("Order could not be created");
@@ -243,22 +245,20 @@ export async function placeLimitOrder(
 
 function parseScaled(value: string): bigint {
   const [whole = "0", fraction = ""] = value.split(".");
-  return BigInt(whole) * 10n ** 18n + BigInt(fraction.padEnd(18, "0") || "0");
+  return BigInt(whole) * FACTOR + BigInt(fraction.padEnd(Number(SCALE), "0") || "0");
 }
 
 function formatScaled(value: bigint): string {
   if (value < 0n) throw new Error("scaled decimal cannot be negative");
-  const whole = value / 10n ** 18n;
-  const fraction = (value % (10n ** 18n)).toString().padStart(18, "0");
+  const whole = value / FACTOR;
+  const fraction = (value % FACTOR).toString().padStart(Number(SCALE), "0");
   return `${whole}.${fraction}`;
 }
 
 function multiplyDecimals(left: string, right: string): string {
-  return formatScaled((parseScaled(left) * parseScaled(right)) / (10n ** 18n));
+  return formatScaled((parseScaled(left) * parseScaled(right)) / FACTOR);
 }
 
 function addDecimals(left: string, right: string): string {
   return formatScaled(parseScaled(left) + parseScaled(right));
 }
-
-void ZERO;
