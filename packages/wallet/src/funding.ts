@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { and, eq, inArray } from "drizzle-orm";
 import type { TradeSharkDatabase } from "@tradeshark/database";
 import {
@@ -6,12 +7,6 @@ import {
   postJournalInTransaction,
   withdrawals
 } from "@tradeshark/database";
-
-function assertAmountMatches(expected: string, actual: string, label: string): void {
-  if (expected !== actual) {
-    throw new Error(`${label} amount does not match the ledger settlement amount`);
-  }
-}
 
 /**
  * Atomically settles a confirmed deposit into USER_AVAILABLE.
@@ -62,7 +57,7 @@ export async function creditDepositAtomically(
     if (!available) throw new Error("Required USER_AVAILABLE ledger account does not exist");
 
     const result = await postJournalInTransaction(tx, {
-      transactionId: crypto.randomUUID(),
+      transactionId: randomUUID(),
       idempotencyKey: `deposit:${deposit.id}:credit`,
       referenceType: "deposit_credit",
       referenceId: deposit.id,
@@ -71,8 +66,6 @@ export async function creditDepositAtomically(
         { accountId: available.id, direction: "credit", amount: deposit.amount }
       ]
     });
-
-    assertAmountMatches(deposit.amount, deposit.amount, "Deposit");
 
     const updated = await tx
       .update(deposits)
@@ -138,7 +131,7 @@ export async function submitWithdrawalAtomically(
     }
 
     const result = await postJournalInTransaction(tx, {
-      transactionId: crypto.randomUUID(),
+      transactionId: randomUUID(),
       idempotencyKey: `withdrawal:${withdrawal.id}:submit`,
       referenceType: "withdrawal_pending",
       referenceId: withdrawal.id,
@@ -147,8 +140,6 @@ export async function submitWithdrawalAtomically(
         { accountId: pending.id, direction: "credit", amount: withdrawal.amount }
       ]
     });
-
-    assertAmountMatches(withdrawal.amount, withdrawal.amount, "Withdrawal");
 
     const updated = await tx
       .update(withdrawals)
