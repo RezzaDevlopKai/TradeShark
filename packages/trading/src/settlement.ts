@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { and, eq, inArray } from "drizzle-orm";
+import { eq, inArray } from "drizzle-orm";
 import type { TradeSharkDatabase } from "@tradeshark/database";
 import { ledgerAccounts, markets, postJournalInTransaction } from "@tradeshark/database";
 import { calculateFee, normalizeDecimal } from "./engine.js";
@@ -13,8 +13,10 @@ type SettleTradeInput = {
   price: string;
   quantity: string;
   feeRate?: string;
+  buyerLimitPrice?: string;
   buyerLockedQuoteAccountId: string;
   buyerAvailableBaseAccountId: string;
+  buyerAvailableQuoteAccountId?: string;
   sellerLockedBaseAccountId: string;
   sellerAvailableQuoteAccountId: string;
   feeRevenueQuoteAccountId: string;
@@ -26,13 +28,15 @@ export type SettleTradeResult = {
   baseTransactionId: string;
   quoteTransactionId: string;
   feeAmount: string;
+  releasedQuoteAmount: string;
   idempotent: boolean;
 };
 
 /**
  * Atomically settles one trade through two asset-specific double-entry journals.
- * The buyer pays the quote-currency trading fee; both asset movements remain
- * separately balanced and account roles/assets are validated before posting.
+ * The buyer pays the quote-currency trading fee. If execution occurs below the
+ * buyer's limit price, the unused quote reservation (including its unused fee
+ * reserve) is returned to USER_AVAILABLE in the same quote journal.
  */
 export async function settleTrade(
   db: TradeSharkDatabase,
@@ -43,8 +47,18 @@ export async function settleTrade(
   const price = normalizeDecimal(input.price);
   const quantity = normalizeDecimal(input.quantity);
   const feeRate = normalizeDecimal(input.feeRate ?? "0.0055");
-  const grossQuote = formatScaled((parseScaled(price) * parseScaled(quantity)) / FACTOR);
+  const buyerLimitPrice = normalizeDecimal(input.buyerLimitPrice ?? price);
+  if (parseScaled(buyerLimitPrice) < parseScaled(price)) {
+    throw new Error("buyerLimitPrice cannot be below execution price");
+  }
+
+  const grossQuote = multiplyDecimals(price, quantity);
   const feeAmount = calculateFee(price, quantity, feeRate);
+  const reservedGrossQuote = multiplyDecimals(buyerLimitPrice, quantity);
+  const reservedFeeAmount = calculateFee(buyerLimitPrice, quantity, feeRate);
+  const buyerDebit = addDecimals(grossQuote, feeAmount);
+  const reservedBuyerDebit = addDecimals(reservedGrossQuote, reservedFeeAmount);
+  const releasedQuoteAmount = subtractDecimals(reservedBuyerDebit, buyerDebit);
 
   return db.transaction(async (tx) => {
     const marketRows = await tx
@@ -60,7 +74,8 @@ export async function settleTrade(
       input.buyerAvailableBaseAccountId,
       input.sellerLockedBaseAccountId,
       input.sellerAvailableQuoteAccountId,
-      input.feeRevenueQuoteAccountId
+      input.feeRevenueQuoteAccountId,
+      ...(input.buyerAvailableQuoteAccountId ? [input.buyerAvailableQuoteAccountId] : [])
     ];
     const accounts = await tx
       .select({ id: ledgerAccounts.id, assetId: ledgerAccounts.assetId, accountType: ledgerAccounts.accountType })
@@ -84,6 +99,12 @@ export async function settleTrade(
     requireAccount(input.sellerLockedBaseAccountId, market.baseAssetId, "USER_LOCKED");
     requireAccount(input.buyerAvailableBaseAccountId, market.baseAssetId, "USER_AVAILABLE");
     requireAccount(input.feeRevenueQuoteAccountId, market.quoteAssetId, "FEE_REVENUE");
+    if (releasedQuoteAmount !== "0.000000000000000000") {
+      if (!input.buyerAvailableQuoteAccountId) {
+        throw new Error("buyerAvailableQuoteAccountId is required when a quote reservation must be released");
+      }
+      requireAccount(input.buyerAvailableQuoteAccountId, market.quoteAssetId, "USER_AVAILABLE");
+    }
 
     const base = await postJournalInTransaction(tx, {
       transactionId: randomUUID(),
@@ -97,24 +118,30 @@ export async function settleTrade(
       ]
     });
 
-    const buyerDebit = addDecimals(grossQuote, feeAmount);
-    const quoteEntries = feeAmount === "0.000000000000000000"
-      ? [
-          { accountId: input.buyerLockedQuoteAccountId, direction: "debit" as const, amount: grossQuote },
-          { accountId: input.sellerAvailableQuoteAccountId, direction: "credit" as const, amount: grossQuote }
-        ]
-      : [
-          { accountId: input.buyerLockedQuoteAccountId, direction: "debit" as const, amount: buyerDebit },
-          { accountId: input.sellerAvailableQuoteAccountId, direction: "credit" as const, amount: grossQuote },
-          { accountId: input.feeRevenueQuoteAccountId, direction: "credit" as const, amount: feeAmount }
-        ];
+    const quoteEntries = [
+      { accountId: input.buyerLockedQuoteAccountId, direction: "debit" as const, amount: reservedBuyerDebit },
+      { accountId: input.sellerAvailableQuoteAccountId, direction: "credit" as const, amount: grossQuote },
+      ...(feeAmount !== "0.000000000000000000"
+        ? [{ accountId: input.feeRevenueQuoteAccountId, direction: "credit" as const, amount: feeAmount }]
+        : []),
+      ...(releasedQuoteAmount !== "0.000000000000000000"
+        ? [{ accountId: input.buyerAvailableQuoteAccountId!, direction: "credit" as const, amount: releasedQuoteAmount }]
+        : [])
+    ];
 
     const quote = await postJournalInTransaction(tx, {
       transactionId: randomUUID(),
       idempotencyKey: `trade:${input.tradeId}:quote`,
       referenceType: "trade_settlement_quote",
       referenceId: input.tradeId,
-      metadata: { marketId: input.marketId, tradeId: input.tradeId, asset: "quote", feeRate },
+      metadata: {
+        marketId: input.marketId,
+        tradeId: input.tradeId,
+        asset: "quote",
+        feeRate,
+        buyerLimitPrice,
+        releasedQuoteAmount
+      },
       entries: quoteEntries
     });
 
@@ -122,6 +149,7 @@ export async function settleTrade(
       baseTransactionId: base.transactionId,
       quoteTransactionId: quote.transactionId,
       feeAmount,
+      releasedQuoteAmount,
       idempotent: base.idempotent && quote.idempotent
     };
   });
@@ -139,6 +167,16 @@ function formatScaled(value: bigint): string {
   return `${whole}.${fraction}`;
 }
 
+function multiplyDecimals(left: string, right: string): string {
+  return formatScaled((parseScaled(left) * parseScaled(right)) / FACTOR);
+}
+
 function addDecimals(left: string, right: string): string {
   return formatScaled(parseScaled(left) + parseScaled(right));
+}
+
+function subtractDecimals(left: string, right: string): string {
+  const result = parseScaled(left) - parseScaled(right);
+  if (result < 0n) throw new Error("decimal subtraction would become negative");
+  return formatScaled(result);
 }
