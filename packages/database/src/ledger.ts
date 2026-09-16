@@ -4,6 +4,7 @@ import type { TradeSharkDatabase } from "./client.js";
 import { idempotencyKeys, journalEntries, journalTransactions } from "./schema/index.js";
 
 const SCALE = 18n;
+const SCALE_DIGITS = Number(SCALE);
 const TEN_TO_SCALE = 10n ** SCALE;
 
 export type LedgerPosting = {
@@ -27,12 +28,19 @@ function toScaledInteger(value: string): bigint {
     throw new Error(`Invalid positive decimal amount: ${value}`);
   }
 
-  const [whole, fraction = ""] = normalized.split(".");
-  if (fraction.length > Number(SCALE)) {
+  const parts = normalized.split(".");
+  const whole = parts[0];
+  const fraction = parts[1] ?? "";
+
+  if (whole === undefined) {
+    throw new Error(`Invalid positive decimal amount: ${value}`);
+  }
+
+  if (fraction.length > SCALE_DIGITS) {
     throw new Error(`Amount exceeds ${SCALE} decimal places: ${value}`);
   }
 
-  return BigInt(whole) * TEN_TO_SCALE + BigInt(fraction.padEnd(Number(SCALE), "0") || "0");
+  return BigInt(whole) * TEN_TO_SCALE + BigInt(fraction.padEnd(SCALE_DIGITS, "0") || "0");
 }
 
 /** Validate the core double-entry invariant before persistence. */
