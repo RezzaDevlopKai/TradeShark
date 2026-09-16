@@ -1,0 +1,21 @@
+services:
+  postgres:
+    image: postgres:17-alpine
+    container_name: tradeshark-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: tradeshark
+      POSTGRES_PASSWORD: tradeshark
+      POSTGRES_DB: tradeshark
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U tradeshark -d tradeshark"]
+      interval: 2s
+      timeout: 5s
+      retries: 15
+    volumes:
+      - tradeshark-postgres-data:/var/lib/postgresql/data
+
+volumes:
+  tradeshark-postgres-data:
