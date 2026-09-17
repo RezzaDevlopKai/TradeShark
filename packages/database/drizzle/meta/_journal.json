@@ -36,6 +36,13 @@
       "when": 1789592404000,
       "tag": "0004_trading_fee_precision",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1789592405000,
+      "tag": "0005_withdrawal_settlement_invariants",
+      "breakpoints": true
     }
   ]
 }
