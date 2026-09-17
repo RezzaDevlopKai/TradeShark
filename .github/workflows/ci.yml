@@ -93,3 +93,6 @@ jobs:
 
       - name: Run API authentication integration tests
         run: pnpm --filter @tradeshark/api test
+
+      - name: Run API wallet integration tests
+        run: pnpm --filter @tradeshark/api test -- src/wallet.integration.test.ts
