@@ -9,5 +9,8 @@
     "start": "node dist/server.js",
     "typecheck": "tsc --noEmit",
     "test": "node --test"
+  },
+  "devDependencies": {
+    "@types/node": "^22.18.0"
   }
 }
