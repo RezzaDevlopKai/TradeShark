@@ -10,6 +10,7 @@ export interface LimitOrder {
   remainingQuantity?: string;
   sequence: number;
   status?: OrderStatus;
+  feeRate?: string;
 }
 
 export interface Trade {
@@ -76,6 +77,7 @@ export function validateLimitOrder(order: LimitOrder): void {
   if (!Number.isSafeInteger(order.sequence) || order.sequence < 0) {
     throw new Error("sequence must be a non-negative safe integer");
   }
+  if (order.feeRate !== undefined) parseDecimal(order.feeRate, "feeRate");
 }
 
 function remaining(order: LimitOrder): bigint {
@@ -86,10 +88,6 @@ function compareBigInt(a: bigint, b: bigint): number {
   return a < b ? -1 : a > b ? 1 : 0;
 }
 
-/**
- * Deterministic price-time priority matcher for one taker against an ordered maker book.
- * The caller owns persistence, locking, ledger reservation/settlement and transactionality.
- */
 export function matchLimitOrder(
   taker: LimitOrder,
   makers: readonly LimitOrder[],
@@ -97,10 +95,7 @@ export function matchLimitOrder(
   tradeIdFactory: (index: number) => string = (index) => `${taker.id}:trade:${index}`
 ): MatchResult {
   validateLimitOrder(taker);
-  const feeRateScaled = parseDecimal(feeRate, "feeRate");
-  const takerPrice = parseDecimal(taker.price, "price");
   let takerRemaining = remaining(taker);
-
   const candidates = makers
     .map((maker) => {
       validateLimitOrder(maker);
@@ -110,8 +105,8 @@ export function matchLimitOrder(
     .filter((maker) => maker.userId !== taker.userId)
     .filter((maker) => maker.side !== taker.side)
     .filter((maker) => taker.side === "buy"
-      ? parseDecimal(maker.price, "price") <= takerPrice
-      : parseDecimal(maker.price, "price") >= takerPrice)
+      ? parseDecimal(maker.price, "price") <= parseDecimal(taker.price, "price")
+      : parseDecimal(maker.price, "price") >= parseDecimal(taker.price, "price"))
     .sort((a, b) => {
       const priceA = parseDecimal(a.price, "price");
       const priceB = parseDecimal(b.price, "price");
@@ -123,12 +118,13 @@ export function matchLimitOrder(
 
   const trades: Trade[] = [];
   const makerOrders: LimitOrder[] = [];
-
   for (const maker of candidates) {
     if (takerRemaining === 0n) break;
     const makerRemaining = remaining(maker);
     const quantity = makerRemaining < takerRemaining ? makerRemaining : takerRemaining;
     const price = parseDecimal(maker.price, "price");
+    const buyerFeeRate = taker.side === "buy" ? (taker.feeRate ?? feeRate) : (maker.feeRate ?? feeRate);
+    const feeRateScaled = parseDecimal(buyerFeeRate, "feeRate");
     const grossQuote = (quantity * price) / SCALE_FACTOR;
     const feeAmount = (grossQuote * feeRateScaled) / SCALE_FACTOR;
 
@@ -151,11 +147,7 @@ export function matchLimitOrder(
     takerRemaining -= quantity;
   }
 
-  return {
-    trades,
-    takerRemaining: formatDecimal(takerRemaining),
-    makerOrders
-  };
+  return { trades, takerRemaining: formatDecimal(takerRemaining), makerOrders };
 }
 
 export function calculateFee(price: string, quantity: string, feeRate = "0.0055"): string {
