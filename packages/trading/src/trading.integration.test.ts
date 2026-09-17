@@ -190,6 +190,7 @@ integration("PostgreSQL trading integration", () => {
         feeRevenueQuoteAccountId: feeRevenueId
       });
 
+      expect(settled.idempotent).toBe(false);
       expect(settled.feeAmount).toBe("0.049500000000000000");
       expect(settled.releasedQuoteAmount).toBe("1.005500000000000000");
       expect(await balance(buyerLockedQuoteId)).toBe("0.000000000000000000");
@@ -211,8 +212,11 @@ integration("PostgreSQL trading integration", () => {
         sellerAvailableQuoteAccountId: sellerAvailableQuoteId,
         feeRevenueQuoteAccountId: feeRevenueId
       });
-      expect(retry).toEqual(settled);
+      expect(retry).toEqual({ ...settled, idempotent: true });
       expect(retry.idempotent).toBe(true);
+      expect(await balance(buyerAvailableQuoteId)).toBe("1.005500000000000000");
+      expect(await balance(buyerAvailableBaseId)).toBe("1.000000000000000000");
+      expect(await balance(sellerAvailableQuoteId)).toBe("9.000000000000000000");
     } finally {
       await client.pool.query(`DELETE FROM journal_entries WHERE transaction_id IN (SELECT id FROM journal_transactions WHERE reference_id = $1 OR idempotency_key IN ($2, $3))`, [tradeId, seedQuoteKey, seedBaseKey]);
       await client.pool.query(`DELETE FROM journal_transactions WHERE reference_id = $1 OR idempotency_key IN ($2, $3)`, [tradeId, seedQuoteKey, seedBaseKey]);
