@@ -3,19 +3,37 @@ import { pathToFileURL } from "node:url";
 import { createDatabase } from "@tradeshark/database";
 import { IdentityError, IdentityService } from "@tradeshark/identity";
 
+const MAX_JSON_BODY_BYTES = 32 * 1024;
+
 export function createApiServer(identity: IdentityService | null) {
   function json(res: ServerResponse, status: number, body: unknown) {
     const payload = JSON.stringify(body);
     res.writeHead(status, {
       "content-type": "application/json; charset=utf-8",
-      "cache-control": "no-store"
+      "cache-control": "no-store",
+      "x-content-type-options": "nosniff",
+      "x-frame-options": "DENY",
+      "referrer-policy": "no-referrer"
     });
     res.end(payload);
   }
 
   async function readJson(req: IncomingMessage): Promise<Record<string, unknown> | null> {
+    const contentType = req.headers["content-type"]?.split(";", 1)[0].trim().toLowerCase();
+    if (contentType !== "application/json") return null;
+
+    const contentLength = Number(req.headers["content-length"] ?? 0);
+    if (!Number.isFinite(contentLength) || contentLength < 0 || contentLength > MAX_JSON_BODY_BYTES) return null;
+
     const chunks: Buffer[] = [];
-    for await (const chunk of req) chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
+    let size = 0;
+    for await (const chunk of req) {
+      const buffer = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
+      size += buffer.length;
+      if (size > MAX_JSON_BODY_BYTES) return null;
+      chunks.push(buffer);
+    }
+
     const payload = Buffer.concat(chunks);
     if (!payload.length) return {};
     try {
