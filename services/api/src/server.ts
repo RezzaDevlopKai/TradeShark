@@ -4,18 +4,26 @@ import { createDatabase } from "@tradeshark/database";
 import { IdentityError, IdentityService } from "@tradeshark/identity";
 
 const MAX_JSON_BODY_BYTES = 32 * 1024;
+const AUTH_RATE_LIMIT_WINDOW_MS = 5 * 60 * 1000;
+const AUTH_LOGIN_LIMIT = 10;
+const AUTH_REGISTER_LIMIT = 5;
+
+type RateLimitBucket = { count: number; resetAt: number };
 
 export function createApiServer(identity: IdentityService | null) {
-  function json(res: ServerResponse, status: number, body: unknown) {
-    const payload = JSON.stringify(body);
-    res.writeHead(status, {
+  const rateLimits = new Map<string, RateLimitBucket>();
+
+  function json(res: ServerResponse, status: number, body: unknown, retryAfterSeconds?: number) {
+    const headers: Record<string, string | number> = {
       "content-type": "application/json; charset=utf-8",
       "cache-control": "no-store",
       "x-content-type-options": "nosniff",
       "x-frame-options": "DENY",
       "referrer-policy": "no-referrer"
-    });
-    res.end(payload);
+    };
+    if (retryAfterSeconds !== undefined) headers["retry-after"] = retryAfterSeconds;
+    res.writeHead(status, headers);
+    res.end(JSON.stringify(body));
   }
 
   async function readJson(req: IncomingMessage): Promise<Record<string, unknown> | null> {
@@ -65,6 +73,29 @@ export function createApiServer(identity: IdentityService | null) {
     }
   }
 
+  function clientKey(req: IncomingMessage): string {
+    return req.socket.remoteAddress ?? "unknown";
+  }
+
+  function consumeRateLimit(req: IncomingMessage, route: "login" | "register", limit: number): number | null {
+    const now = Date.now();
+    const key = `${route}:${clientKey(req)}`;
+    const current = rateLimits.get(key);
+    if (!current || current.resetAt <= now) {
+      rateLimits.set(key, { count: 1, resetAt: now + AUTH_RATE_LIMIT_WINDOW_MS });
+      return null;
+    }
+    if (current.count >= limit) {
+      return Math.max(1, Math.ceil((current.resetAt - now) / 1000));
+    }
+    current.count += 1;
+    return null;
+  }
+
+  function clearRateLimit(req: IncomingMessage, route: "login" | "register") {
+    rateLimits.delete(`${route}:${clientKey(req)}`);
+  }
+
   function requireIdentity(res: ServerResponse): IdentityService | null {
     if (!identity) {
       json(res, 503, { error: "DATABASE_UNAVAILABLE" });
@@ -96,6 +127,12 @@ export function createApiServer(identity: IdentityService | null) {
         if (!auth) return;
 
         if (req.method === "POST" && url.pathname === "/api/v1/auth/register") {
+          const retryAfter = consumeRateLimit(req, "register", AUTH_REGISTER_LIMIT);
+          if (retryAfter !== null) {
+            json(res, 429, { error: "RATE_LIMITED" }, retryAfter);
+            return;
+          }
+
           const body = await readJson(req);
           if (!body || typeof body.email !== "string" || typeof body.username !== "string" || typeof body.password !== "string") {
             json(res, 400, { error: "INVALID_REQUEST" });
@@ -109,6 +146,7 @@ export function createApiServer(identity: IdentityService | null) {
               password: body.password,
               userAgent: req.headers["user-agent"] ?? null
             });
+            clearRateLimit(req, "register");
             res.setHeader("set-cookie", sessionCookie(result.token, result.expiresAt));
             json(res, 201, { user: result.user, expiresAt: result.expiresAt });
           } catch (error) {
@@ -122,6 +160,12 @@ export function createApiServer(identity: IdentityService | null) {
         }
 
         if (req.method === "POST" && url.pathname === "/api/v1/auth/login") {
+          const retryAfter = consumeRateLimit(req, "login", AUTH_LOGIN_LIMIT);
+          if (retryAfter !== null) {
+            json(res, 429, { error: "RATE_LIMITED" }, retryAfter);
+            return;
+          }
+
           const body = await readJson(req);
           if (!body || typeof body.email !== "string" || typeof body.password !== "string") {
             json(res, 400, { error: "INVALID_REQUEST" });
@@ -134,6 +178,7 @@ export function createApiServer(identity: IdentityService | null) {
               password: body.password,
               userAgent: req.headers["user-agent"] ?? null
             });
+            clearRateLimit(req, "login");
             res.setHeader("set-cookie", sessionCookie(result.token, result.expiresAt));
             json(res, 200, { user: result.user, expiresAt: result.expiresAt });
           } catch (error) {
