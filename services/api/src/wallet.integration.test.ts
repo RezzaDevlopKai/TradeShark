@@ -18,12 +18,13 @@ integration("API wallet integration", () => {
   it("returns a credited PostgreSQL wallet balance through the authenticated API", async () => {
     if (!database) throw new Error("DATABASE_URL is required");
 
-    const userId = randomUUID();
     const assetId = randomUUID();
     const externalId = randomUUID();
     const pendingId = randomUUID();
     const availableId = randomUUID();
     const depositId = randomUUID();
+    const email = `${randomUUID()}@api.wallet.test`;
+    const username = `apiwallet_${randomUUID().replaceAll("-", "").slice(0, 20)}`;
     const identity = new IdentityService(database.db);
     const server = createApiServer(identity, database.db);
 
@@ -32,8 +33,15 @@ integration("API wallet integration", () => {
     if (!address || typeof address === "string") throw new Error("API server did not expose a port");
     const baseUrl = `http://127.0.0.1:${address.port}`;
 
+    let userId = "";
     try {
-      await database.pool.query(`INSERT INTO users (id, email, username) VALUES ($1, $2, $3)`, [userId, `${userId}@api.wallet.test`, `apiwallet_${userId.replaceAll("-", "")}`]);
+      const registration = await identity.register({
+        email,
+        username,
+        password: "correct-horse-battery-staple"
+      });
+      userId = registration.user.id;
+
       await database.pool.query(`INSERT INTO assets (id, symbol, name, decimals, is_active) VALUES ($1, 'USD', 'US Dollar', 2, true)`, [assetId]);
       await database.pool.query(
         `INSERT INTO ledger_accounts (id, user_id, asset_id, account_type, code) VALUES
@@ -48,25 +56,33 @@ integration("API wallet integration", () => {
       await confirmDepositAtomically(database.db, depositId);
       await creditDepositAtomically(database.db, depositId);
 
-      const registration = await fetch(`${baseUrl}/api/v1/auth/register`, {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ email: `${userId}@api.wallet.test`, username: `apiwallet_${userId.replaceAll("-", "")}`, password: "correct-horse-battery-staple" })
+      const response = await fetch(`${baseUrl}/api/v1/wallet/balances`, {
+        headers: { cookie: `tradeshark_session=${encodeURIComponent(registration.token)}` }
       });
-      assert.equal(registration.status, 400);
-
-      const sessionToken = await identity.createSessionForTesting?.(userId);
-      void sessionToken;
-      assert.ok(true);
+      assert.equal(response.status, 200);
+      assert.deepEqual(await response.json(), {
+        balances: [{
+          accountId: availableId,
+          assetId,
+          symbol: "USD",
+          name: "US Dollar",
+          decimals: 2,
+          balance: "42.500000000000000000"
+        }]
+      });
     } finally {
       server.close();
+      if (userId) {
+        await database.pool.query(`DELETE FROM auth_sessions WHERE user_id = $1`, [userId]);
+        await database.pool.query(`DELETE FROM user_credentials WHERE user_id = $1`, [userId]);
+        await database.pool.query(`DELETE FROM users WHERE id = $1`, [userId]);
+      }
       await database.pool.query(`DELETE FROM journal_entries WHERE transaction_id IN (SELECT id FROM journal_transactions WHERE reference_id = $1)`, [depositId]);
       await database.pool.query(`DELETE FROM journal_transactions WHERE reference_id = $1`, [depositId]);
       await database.pool.query(`DELETE FROM deposits WHERE id = $1`, [depositId]);
       await database.pool.query(`DELETE FROM ledger_balance_projections WHERE account_id = ANY($1::uuid[])`, [[pendingId, availableId]]);
       await database.pool.query(`DELETE FROM ledger_accounts WHERE id = ANY($1::uuid[])`, [[externalId, pendingId, availableId]]);
       await database.pool.query(`DELETE FROM assets WHERE id = $1`, [assetId]);
-      await database.pool.query(`DELETE FROM users WHERE id = $1`, [userId]);
     }
   });
 });
