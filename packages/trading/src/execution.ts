@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 import { and, asc, desc, eq, gt, gte, inArray, isNotNull, isNull, lte, ne, sql } from "drizzle-orm";
 import type { TradeSharkDatabase } from "@tradeshark/database";
 import { ledgerAccounts, markets, orders, trades } from "@tradeshark/database";
-import { matchLimitOrder, normalizeDecimal } from "./engine.js";
+import { calculateFee, matchLimitOrder, normalizeDecimal } from "./engine.js";
 import { settleTradeInTransaction } from "./settlement.js";
 
 const ZERO = "0.000000000000000000";
@@ -105,13 +105,12 @@ export async function executeLimitOrder(db: TradeSharkDatabase, input: ExecuteLi
         sellerLockedBaseAccountId: sellerAccounts.lockedBase.id, sellerAvailableQuoteAccountId: sellerAccounts.availableQuote.id, feeRevenueQuoteAccountId: feeAccount.id
       });
 
-      // The matcher and settlement must agree on the exact fee charged.
-      // The matcher value is part of the deterministic execution result;
-      // settlement confirms the same amount was posted to the ledger.
-      if (settlement.feeAmount !== matched.feeAmount) {
-        throw new Error(`Trade fee mismatch for ${matched.id}: matcher=${matched.feeAmount}, settlement=${settlement.feeAmount}`);
+      // Derive the persisted/result fee from the same canonical calculation used by settlement.
+      // Do not depend on an optional runtime property from the matcher result.
+      const feeAmount = calculateFee(matched.price, matched.quantity, matched.feeRate);
+      if (settlement.feeAmount !== feeAmount) {
+        throw new Error(`Trade fee mismatch for ${matched.id}: calculated=${feeAmount}, settlement=${settlement.feeAmount}`);
       }
-      const feeAmount = matched.feeAmount;
 
       await tx.insert(trades).values({ id: matched.id, marketId: market.id, buyOrderId: matched.buyOrderId, sellOrderId: matched.sellOrderId, price: matched.price, quantity: matched.quantity, feeAmount });
       executedTrades.push({
