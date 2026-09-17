@@ -45,6 +45,18 @@ describe("trading core", () => {
     expect(result.takerRemaining).toBe("0.000000000000000000");
   });
 
+  it("exposes the exact buyer-side fee on every matched trade", () => {
+    const result = matchLimitOrder(
+      maker("taker", "buyer", "buy", "12", "1", 2),
+      [maker("maker", "seller", "sell", "10", "1", 1)],
+      "0.0055",
+      () => "trade-1"
+    );
+
+    expect(result.trades[0]?.feeRate).toBe("0.005500000000000000");
+    expect(result.trades[0]?.feeAmount).toBe("0.055000000000000000");
+  });
+
   it("passes stable maker identity and fill quantity into trade id generation", () => {
     const calls: Array<{ index: number; makerId: string; makerRemaining: string | undefined; quantity: string }> = [];
     const result = matchLimitOrder(
