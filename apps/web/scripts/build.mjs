@@ -15,6 +15,7 @@ for (const name of [
   "trade.html",
   "styles.css",
   "app.js",
+  "api.js",
   "robots.txt",
   "sitemap.xml"
 ]) {
