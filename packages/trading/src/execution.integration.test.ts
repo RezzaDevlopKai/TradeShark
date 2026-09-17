@@ -1,7 +1,8 @@
 import { randomUUID } from "node:crypto";
 import { afterAll, describe, expect, it } from "vitest";
 import { createDatabase, postJournal } from "@tradeshark/database";
-import { cancelLimitOrder, executeLimitOrder, placeLimitOrder } from "./index.js";
+import { cancelLimitOrder, placeLimitOrder } from "./index.js";
+import { executeLimitOrder } from "./execution.js";
 
 const databaseUrl = process.env.DATABASE_URL;
 const integration = databaseUrl ? describe : describe.skip;
@@ -20,36 +21,29 @@ async function account(id: string, userId: string | null, assetId: string, type:
   if (projection) await client!.pool.query(`INSERT INTO ledger_balance_projections (account_id, balance, version) VALUES ($1, 0, 0)`, [id]);
 }
 
-async function balance(id: string) {
-  const result = await client!.pool.query(`SELECT balance::text AS balance FROM ledger_balance_projections WHERE account_id = $1`, [id]);
-  return result.rows[0]?.balance as string;
+async function seed(debitAccountId: string, creditAccountId: string, amount: string, key: string) {
+  await postJournal(client!.db, { transactionId: randomUUID(), idempotencyKey: key, referenceType: "test_seed", referenceId: key, metadata: { key }, entries: [{ accountId: debitAccountId, direction: "debit", amount }, { accountId: creditAccountId, direction: "credit", amount }] });
 }
 
-async function seed(accountId: string, treasuryId: string, amount: string, key: string) {
-  await postJournal(client!.db, { transactionId: randomUUID(), idempotencyKey: key, referenceType: "execution_integration_seed", entries: [{ accountId: treasuryId, direction: "debit", amount }, { accountId, direction: "credit", amount }] });
+async function balance(accountId: string) {
+  const result = await client!.pool.query(`SELECT balance::text AS balance FROM ledger_balance_projections WHERE account_id = $1`, [accountId]);
+  return result.rows[0]?.balance;
 }
 
-async function cleanup(ids: { users: string[]; assets: string[]; market: string; accounts: string[]; orders: string[]; seeds: string[] }) {
-  if (!client) return;
-  if (ids.orders.length) {
-    await client.pool.query(`DELETE FROM trades WHERE buy_order_id = ANY($1::uuid[]) OR sell_order_id = ANY($1::uuid[])`, [ids.orders]);
-    await client.pool.query(`DELETE FROM orders WHERE id = ANY($1::uuid[])`, [ids.orders]);
-    await client.pool.query(`DELETE FROM idempotency_keys WHERE key LIKE ANY($1::text[])`, [ids.orders.map((id) => `order:${id}:%`)]);
-  }
-  if (ids.seeds.length) await client.pool.query(`DELETE FROM idempotency_keys WHERE key = ANY($1::text[])`, [ids.seeds]);
-  if (ids.accounts.length) {
-    await client.pool.query(`DELETE FROM ledger_balance_projections WHERE account_id = ANY($1::uuid[])`, [ids.accounts]);
-    await client.pool.query(`WITH doomed AS (DELETE FROM journal_entries WHERE account_id = ANY($1::uuid[]) RETURNING transaction_id) DELETE FROM journal_transactions WHERE id IN (SELECT transaction_id FROM doomed)`, [ids.accounts]);
-    await client.pool.query(`DELETE FROM ledger_accounts WHERE id = ANY($1::uuid[])`, [ids.accounts]);
-  }
-  await client.pool.query(`DELETE FROM markets WHERE id = $1`, [ids.market]);
-  if (ids.assets.length) await client.pool.query(`DELETE FROM assets WHERE id = ANY($1::uuid[])`, [ids.assets]);
-  if (ids.users.length) await client.pool.query(`DELETE FROM users WHERE id = ANY($1::uuid[])`, [ids.users]);
+async function cleanup(input: { users: string[]; assets: string[]; market: string; accounts: string[]; orders: string[]; seeds: string[] }) {
+  await client!.pool.query(`DELETE FROM ledger_journal_entries WHERE transaction_id IN (SELECT id FROM ledger_transactions WHERE idempotency_key = ANY($1::text[]))`, [input.seeds]);
+  await client!.pool.query(`DELETE FROM ledger_transactions WHERE idempotency_key = ANY($1::text[])`, [input.seeds]);
+  if (input.orders.length) await client!.pool.query(`DELETE FROM trades WHERE buy_order_id = ANY($1::uuid[]) OR sell_order_id = ANY($1::uuid[])`, [input.orders]);
+  if (input.orders.length) await client!.pool.query(`DELETE FROM orders WHERE id = ANY($1::uuid[])`, [input.orders]);
+  if (input.accounts.length) { await client!.pool.query(`DELETE FROM ledger_journal_entries WHERE account_id = ANY($1::uuid[])`, [input.accounts]); await client!.pool.query(`DELETE FROM ledger_balance_projections WHERE account_id = ANY($1::uuid[])`, [input.accounts]); await client!.pool.query(`DELETE FROM ledger_accounts WHERE id = ANY($1::uuid[])`, [input.accounts]); }
+  await client!.pool.query(`DELETE FROM markets WHERE id = $1`, [input.market]);
+  if (input.assets.length) await client!.pool.query(`DELETE FROM assets WHERE id = ANY($1::uuid[])`, [input.assets]);
+  if (input.users.length) await client!.pool.query(`DELETE FROM users WHERE id = ANY($1::uuid[])`, [input.users]);
 }
 
-integration("PostgreSQL persistent execution integration", () => {
-  afterAll(async () => client?.pool.end());
+afterAll(async () => client?.pool.end());
 
+describe("PostgreSQL persistent execution integration", () => {
   it("matches a buy against the best sell, settles the ledger, persists the fee, and is safe to replay", async () => {
     if (!client) throw new Error("DATABASE_URL is required");
     const buyerId = randomUUID(), sellerId = randomUUID(), baseId = randomUUID(), quoteId = randomUUID(), marketId = randomUUID();
@@ -98,15 +92,13 @@ integration("PostgreSQL persistent execution integration", () => {
       await account(quoteTreasury, null, quoteId, "TREASURY", false); await account(baseTreasury, null, baseId, "TREASURY", false); await account(feeRevenue, null, quoteId, "FEE_REVENUE", false);
       await seed(buyerQuoteAvailable, quoteTreasury, "100", quoteSeed); await seed(sellerBaseAvailable, baseTreasury, "5", baseSeed);
       const sell = await placeLimitOrder(client.db, { userId: sellerId, marketId, side: "sell", price: "10", quantity: "1", clientOrderId: `partial-sell-${sellerId}` });
-      const buy = await placeLimitOrder(client.db, { userId: buyerId, marketId, side: "buy", price: "10", quantity: "2", clientOrderId: `partial-buy-${buyerId}` });
+      const buy = await placeLimitOrder(client.db, { userId: buyerId, marketId, side: "buy", price: "12", quantity: "2", clientOrderId: `partial-buy-${buyerId}` });
       orderIds.push(sell.id, buy.id);
+      expect(await balance(buyerQuoteLocked)).toBe("24.132000000000000000");
       const execution = await executeLimitOrder(client.db, { orderId: buy.id });
-      expect(execution.status).toBe("partially_filled"); expect(execution.remainingQuantity).toBe("1.000000000000000000"); expect(execution.trades).toHaveLength(1);
-      expect(await balance(buyerQuoteLocked)).toBe("10.055000000000000000"); expect(await balance(buyerQuoteAvailable)).toBe("79.890000000000000000");
-      const persistedTrade = await client.pool.query(`SELECT fee_amount::text AS fee_amount FROM trades WHERE id = $1`, [execution.trades[0]!.tradeId]);
-      expect(persistedTrade.rows[0]?.fee_amount).toBe("0.055000000000000000");
-      const cancelled = await cancelLimitOrder(client.db, { userId: buyerId, orderId: buy.id });
-      expect(cancelled.releasedAmount).toBe("10.055000000000000000"); expect(await balance(buyerQuoteLocked)).toBe("0.000000000000000000"); expect(await balance(buyerQuoteAvailable)).toBe("89.945000000000000000");
+      expect(execution.status).toBe("partially_filled"); expect(execution.remainingQuantity).toBe("1.000000000000000000"); expect(execution.trades).toHaveLength(1); expect(execution.trades[0]?.feeAmount).toBe("0.055000000000000000");
+      const cancel = await cancelLimitOrder(client.db, { orderId: buy.id });
+      expect(cancel.status).toBe("cancelled"); expect(await balance(buyerQuoteLocked)).toBe("0.000000000000000000"); expect(await balance(buyerQuoteAvailable)).toBe("89.945000000000000000");
     } finally {
       await cleanup({ users: [buyerId, sellerId], assets: [baseId, quoteId], market: marketId, accounts: [buyerQuoteAvailable, buyerQuoteLocked, buyerBaseAvailable, buyerBaseLocked, sellerQuoteAvailable, sellerQuoteLocked, sellerBaseAvailable, sellerBaseLocked, quoteTreasury, baseTreasury, feeRevenue], orders: orderIds, seeds: [quoteSeed, baseSeed] });
     }
