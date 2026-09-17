@@ -1,11 +1,12 @@
 import { describe, expect, it, vi } from "vitest";
-import { getUserAvailableBalance } from "./index.js";
+import { getUserAvailableBalance, getUserBalances } from "./index.js";
 
 function createMockDatabase(rows: unknown[]) {
   const limit = vi.fn().mockResolvedValue(rows);
   const query = {
     select: vi.fn(() => query),
     from: vi.fn(() => query),
+    innerJoin: vi.fn(() => query),
     leftJoin: vi.fn(() => query),
     where: vi.fn(() => query),
     limit
@@ -53,5 +54,45 @@ describe("wallet balance read model", () => {
       accountId: "acct-1",
       balance: "0"
     });
+  });
+
+  it("returns all available balances with asset metadata", async () => {
+    const db = createMockDatabase([
+      {
+        accountId: "acct-usd",
+        assetId: "usd",
+        symbol: "USD",
+        name: "US Dollar",
+        decimals: 2,
+        balance: "125.50"
+      },
+      {
+        accountId: "acct-btc",
+        assetId: "btc",
+        symbol: "BTC",
+        name: "Bitcoin",
+        decimals: 8,
+        balance: null
+      }
+    ]);
+
+    await expect(getUserBalances(db, "user-1")).resolves.toEqual([
+      {
+        accountId: "acct-usd",
+        assetId: "usd",
+        symbol: "USD",
+        name: "US Dollar",
+        decimals: 2,
+        balance: "125.50"
+      },
+      {
+        accountId: "acct-btc",
+        assetId: "btc",
+        symbol: "BTC",
+        name: "Bitcoin",
+        decimals: 8,
+        balance: "0"
+      }
+    ]);
   });
 });
