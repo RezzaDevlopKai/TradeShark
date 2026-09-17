@@ -69,4 +69,27 @@ integration("PostgreSQL withdrawal settlement evidence", () => {
       expect(row.rows[0]).toEqual({ status: "confirmed", external_reference: reference });
     } finally { await cleanup(seed); }
   });
+
+  it("serializes concurrent confirmations so only one settlement reference can win", async () => {
+    if (!client) throw new Error("DATABASE_URL is required");
+    const seed = await seedSubmittedWithdrawal();
+    const firstReference = `tx:first:${seed.withdrawalId}`;
+    const secondReference = `tx:second:${seed.withdrawalId}`;
+    try {
+      const results = await Promise.allSettled([
+        confirmWithdrawalWithSettlementAtomically(client.db, seed.withdrawalId, firstReference),
+        confirmWithdrawalWithSettlementAtomically(client.db, seed.withdrawalId, secondReference)
+      ]);
+
+      const fulfilled = results.filter((result): result is PromiseFulfilledResult<{ transactionId: string; idempotent: boolean }> => result.status === "fulfilled");
+      const rejected = results.filter((result) => result.status === "rejected");
+      expect(fulfilled).toHaveLength(1);
+      expect(rejected).toHaveLength(1);
+      expect(fulfilled[0]?.value.idempotent).toBe(false);
+
+      const row = await client.pool.query(`SELECT status, external_reference FROM withdrawals WHERE id = $1`, [seed.withdrawalId]);
+      expect(row.rows[0]?.status).toBe("confirmed");
+      expect([firstReference, secondReference]).toContain(row.rows[0]?.external_reference);
+    } finally { await cleanup(seed); }
+  });
 });
