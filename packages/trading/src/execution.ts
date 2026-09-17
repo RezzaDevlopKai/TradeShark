@@ -105,21 +105,25 @@ export async function executeLimitOrder(db: TradeSharkDatabase, input: ExecuteLi
         sellerLockedBaseAccountId: sellerAccounts.lockedBase.id, sellerAvailableQuoteAccountId: sellerAccounts.availableQuote.id, feeRevenueQuoteAccountId: feeAccount.id
       });
 
-      // Settlement is the canonical source of the fee actually posted to the ledger.
       const feeAmount = settlement.feeAmount;
       if (!feeAmount) throw new Error(`Trade ${matched.id} returned an empty settlement fee`);
 
-      await tx.insert(trades).values({ id: matched.id, marketId: market.id, buyOrderId: matched.buyOrderId, sellOrderId: matched.sellOrderId, price: matched.price, quantity: matched.quantity, feeAmount });
-      const executedTrade: ExecutedTrade = {
-        tradeId: matched.id,
-        buyOrderId: matched.buyOrderId,
-        sellOrderId: matched.sellOrderId,
-        price: matched.price,
-        quantity: matched.quantity,
-        feeAmount: feeAmount,
+      const inserted = await tx
+        .insert(trades)
+        .values({ id: matched.id, marketId: market.id, buyOrderId: matched.buyOrderId, sellOrderId: matched.sellOrderId, price: matched.price, quantity: matched.quantity, feeAmount })
+        .returning({ id: trades.id, marketId: trades.marketId, buyOrderId: trades.buyOrderId, sellOrderId: trades.sellOrderId, price: trades.price, quantity: trades.quantity, feeAmount: trades.feeAmount });
+      const persistedTrade = inserted[0];
+      if (!persistedTrade || !persistedTrade.feeAmount) throw new Error(`Trade ${matched.id} was persisted without a fee amount`);
+
+      executedTrades.push({
+        tradeId: persistedTrade.id,
+        buyOrderId: persistedTrade.buyOrderId,
+        sellOrderId: persistedTrade.sellOrderId,
+        price: normalizeDecimal(persistedTrade.price),
+        quantity: normalizeDecimal(persistedTrade.quantity),
+        feeAmount: normalizeDecimal(persistedTrade.feeAmount),
         releasedQuoteAmount: settlement.releasedQuoteAmount
-      };
-      executedTrades.push(executedTrade);
+      });
     }
 
     for (const maker of match.makerOrders) {
