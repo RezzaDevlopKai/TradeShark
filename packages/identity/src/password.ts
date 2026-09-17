@@ -1,7 +1,5 @@
 import { randomBytes, scrypt as scryptCallback, timingSafeEqual } from "node:crypto";
-import { promisify } from "node:util";
 
-const scrypt = promisify(scryptCallback);
 const KEY_LENGTH = 64;
 const SALT_BYTES = 16;
 const SCRYPT_N = 16_384;
@@ -18,18 +16,35 @@ function decode(value: string): Buffer {
   return Buffer.from(value, "base64url");
 }
 
+function deriveKey(
+  password: string,
+  salt: Buffer,
+  keyLength: number,
+  options: { N: number; r: number; p: number; maxmem: number }
+): Promise<Buffer> {
+  return new Promise((resolve, reject) => {
+    scryptCallback(password, salt, keyLength, options, (error, derived) => {
+      if (error) {
+        reject(error);
+        return;
+      }
+      resolve(derived);
+    });
+  });
+}
+
 export async function hashPassword(password: string): Promise<PasswordHash> {
   if (password.length < 12) {
     throw new Error("Password must contain at least 12 characters");
   }
 
   const salt = randomBytes(SALT_BYTES);
-  const derived = (await scrypt(password, salt, KEY_LENGTH, {
+  const derived = await deriveKey(password, salt, KEY_LENGTH, {
     N: SCRYPT_N,
     r: SCRYPT_R,
     p: SCRYPT_P,
     maxmem: 32 * 1024 * 1024
-  })) as Buffer;
+  });
 
   return `scrypt$${SCRYPT_N}$${SCRYPT_R}$${SCRYPT_P}$${encode(salt)}$${encode(derived)}`;
 }
@@ -50,12 +65,12 @@ export async function verifyPassword(password: string, encodedHash: PasswordHash
   try {
     const salt = decode(saltValue);
     const expected = decode(keyValue);
-    const derived = (await scrypt(password, salt, expected.length, {
+    const derived = await deriveKey(password, salt, expected.length, {
       N,
       r,
       p,
       maxmem: 32 * 1024 * 1024
-    })) as Buffer;
+    });
 
     return derived.length === expected.length && timingSafeEqual(derived, expected);
   } catch {
