@@ -84,7 +84,7 @@ describe("PostgreSQL persistent execution integration", () => {
       await account(sellerBaseLocked, sellerId, baseId, "USER_LOCKED");
       await account(quoteTreasury, null, quoteId, "TREASURY", false);
       await account(baseTreasury, null, baseId, "TREASURY", false);
-      await account(feeRevenue, null, quoteId, "FEE_REVENUE", false);
+      await account(feeRevenue, null, quoteId, "FEE_REVENUE", true);
       await seed(buyerQuoteAvailable, quoteTreasury, "100", quoteSeed);
       await seed(sellerBaseAvailable, baseTreasury, "5", baseSeed);
 
