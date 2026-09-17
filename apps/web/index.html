@@ -21,7 +21,10 @@
           <a href="./intelligence.html">Airdrop Intelligence</a>
           <a href="./mayhem.html">Mayhem</a>
         </nav>
-        <a class="ghost-button" href="./trade.html">Open Terminal</a>
+        <div class="nav-actions">
+          <span class="system-status" data-system-status><span class="status-dot"></span><span data-system-status-label>CORE CHECK</span></span>
+          <a class="ghost-button" href="./trade.html">Open Terminal</a>
+        </div>
       </header>
 
       <main>
@@ -39,7 +42,7 @@
             </div>
           </div>
           <div class="terminal-card" aria-label="Trading terminal preview">
-            <div class="terminal-top"><span>MARKET OVERVIEW</span><span class="live">● PREVIEW</span></div>
+            <div class="terminal-top"><span>MARKET OVERVIEW</span><span class="live">● LIVE UI</span></div>
             <div class="ticker"><div><strong>BTC/USD</strong><small>Bitcoin</small></div><strong>$104,821.42</strong><span class="up">+2.84%</span></div>
             <div class="chart" aria-hidden="true"><span></span><svg viewBox="0 0 500 190" preserveAspectRatio="none"><path d="M0 155 C35 150 48 128 76 138 S118 115 145 125 S185 92 212 105 S250 75 280 94 S315 50 342 68 S380 38 407 57 S447 26 500 17" fill="none" stroke="currentColor" stroke-width="4" vector-effect="non-scaling-stroke"/></svg></div>
             <div class="terminal-grid"><div><small>24H HIGH</small><b>$106,204.18</b></div><div><small>24H LOW</small><b>$100,112.03</b></div><div><small>VOLUME</small><b>$38.4B</b></div></div>
@@ -58,13 +61,14 @@
         <section id="intelligence" class="feature-grid section">
           <article class="feature-card featured"><p class="eyebrow">01 / INTELLIGENCE</p><h2>Find the signal<br />before the crowd.</h2><p>Discover public crypto activity, ecosystem opportunities and airdrop signals with transparent source context.</p><a href="./intelligence.html">Open Intelligence →</a></article>
           <article id="mayhem" class="feature-card"><p class="eyebrow">02 / MAYHEM</p><h2>Create.<br />Launch.<br />Discover.</h2><p>One free Mayhem coin creation per account, with honest public activity and built-in discovery.</p><a href="./mayhem.html">Enter Mayhem →</a></article>
-          <article class="feature-card"><p class="eyebrow">03 / FUTURE MODE</p><h2>A sharper<br />way to trade.</h2><p>Switch the interface into a denser command-center experience when you need more market context.</p><a class="text-button" href="./trade.html">Open terminal →</a></article>
+          <article class="feature-card"><p class="eyebrow">03 / FUTURE MODE</p><h2>A sharper<br />way to trade.</h2><p>Switch the interface into a denser command-center experience when you need more market context.</p><button class="text-button" type="button" data-action="future-mode">Future Mode →</button></article>
         </section>
 
         <section class="manifesto section"><p class="eyebrow">THE TRADEShARK STANDARD</p><h2>Fast is good.<br /><em>Trust is essential.</em></h2><div class="manifesto-points"><div><b>01</b><span>Exact financial math</span></div><div><b>02</b><span>Auditable ledger settlement</span></div><div><b>03</b><span>Real activity, never fake volume</span></div><div><b>04</b><span>Privacy-first public intelligence</span></div></div></section>
       </main>
 
-      <footer><span>© 2026 TradeShark</span><span>Prototype interface — trading execution is not connected yet.</span></footer>
+      <footer><span>© 2026 TradeShark</span><span>Execution core is being connected to the live platform API.</span></footer>
     </div>
+    <script type="module" src="./app.js"></script>
   </body>
 </html>
