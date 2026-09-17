@@ -108,20 +108,28 @@ export async function executeLimitOrder(db: TradeSharkDatabase, input: ExecuteLi
       const feeAmount = settlement.feeAmount;
       if (!feeAmount) throw new Error(`Trade ${matched.id} returned an empty settlement fee`);
 
-      const inserted = await tx
+      await tx
         .insert(trades)
-        .values({ id: matched.id, marketId: market.id, buyOrderId: matched.buyOrderId, sellOrderId: matched.sellOrderId, price: matched.price, quantity: matched.quantity, feeAmount })
-        .returning({ id: trades.id, marketId: trades.marketId, buyOrderId: trades.buyOrderId, sellOrderId: trades.sellOrderId, price: trades.price, quantity: trades.quantity, feeAmount: trades.feeAmount });
-      const persistedTrade = inserted[0];
-      if (!persistedTrade || !persistedTrade.feeAmount) throw new Error(`Trade ${matched.id} was persisted without a fee amount`);
+        .values({ id: matched.id, marketId: market.id, buyOrderId: matched.buyOrderId, sellOrderId: matched.sellOrderId, price: matched.price, quantity: matched.quantity, feeAmount });
+
+      const persistedRows = await tx.execute(sql`
+        SELECT id, market_id, buy_order_id, sell_order_id, price::text AS price, quantity::text AS quantity, fee_amount::text AS fee_amount
+        FROM trades
+        WHERE id = ${matched.id}
+        FOR UPDATE
+      `);
+      const persistedTrade = persistedRows.rows[0] as
+        | { id: string; market_id: string; buy_order_id: string; sell_order_id: string; price: string; quantity: string; fee_amount: string }
+        | undefined;
+      if (!persistedTrade || !persistedTrade.fee_amount) throw new Error(`Trade ${matched.id} was persisted without a fee amount`);
 
       executedTrades.push({
         tradeId: persistedTrade.id,
-        buyOrderId: persistedTrade.buyOrderId,
-        sellOrderId: persistedTrade.sellOrderId,
+        buyOrderId: persistedTrade.buy_order_id,
+        sellOrderId: persistedTrade.sell_order_id,
         price: normalizeDecimal(persistedTrade.price),
         quantity: normalizeDecimal(persistedTrade.quantity),
-        feeAmount: normalizeDecimal(persistedTrade.feeAmount),
+        feeAmount: normalizeDecimal(persistedTrade.fee_amount),
         releasedQuoteAmount: settlement.releasedQuoteAmount
       });
     }
