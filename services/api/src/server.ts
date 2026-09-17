@@ -1,10 +1,10 @@
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { pathToFileURL } from "node:url";
-import { and, eq } from "drizzle-orm";
 import { authorize } from "@tradeshark/authorization";
-import { assets, createDatabase, ledgerAccounts, ledgerBalanceProjections } from "@tradeshark/database";
+import { createDatabase } from "@tradeshark/database";
 import type { TradeSharkDatabase } from "@tradeshark/database";
 import { IdentityError, IdentityService } from "@tradeshark/identity";
+import { getUserBalances } from "@tradeshark/wallet";
 
 const MAX_JSON_BODY_BYTES = 32 * 1024;
 const AUTH_RATE_LIMIT_WINDOW_MS = 5 * 60 * 1000;
@@ -267,30 +267,8 @@ export function createApiServer(identity: IdentityService | null, database: Trad
           return;
         }
 
-        const rows = await database
-          .select({
-            accountId: ledgerAccounts.id,
-            assetId: assets.id,
-            symbol: assets.symbol,
-            name: assets.name,
-            decimals: assets.decimals,
-            balance: ledgerBalanceProjections.balance
-          })
-          .from(ledgerAccounts)
-          .innerJoin(assets, eq(assets.id, ledgerAccounts.assetId))
-          .leftJoin(ledgerBalanceProjections, eq(ledgerBalanceProjections.accountId, ledgerAccounts.id))
-          .where(and(eq(ledgerAccounts.userId, session.user.id), eq(ledgerAccounts.accountType, "USER_AVAILABLE")));
-
-        json(res, 200, {
-          balances: rows.map((row) => ({
-            accountId: row.accountId,
-            assetId: row.assetId,
-            symbol: row.symbol,
-            name: row.name,
-            decimals: row.decimals,
-            balance: row.balance ?? "0"
-          }))
-        });
+        const balances = await getUserBalances(database, session.user.id);
+        json(res, 200, { balances });
         return;
       }
 
