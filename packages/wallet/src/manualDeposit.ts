@@ -224,10 +224,15 @@ export async function approveManualDeposit(
     });
 
     if (!confirmResult.idempotent) {
-      await tx
+      const updated = await tx
         .update(deposits)
         .set({ status: "confirmed", confirmedAt: new Date(), updatedAt: new Date() })
-        .where(and(eq(deposits.id, deposit.id), eq(deposits.status, "pending")));
+        .where(and(eq(deposits.id, deposit.id), eq(deposits.status, "pending")))
+        .returning({ id: deposits.id });
+
+      if (updated.length !== 1) {
+        throw new Error("Deposit lifecycle changed while confirmation was being applied");
+      }
 
       await tx.insert(auditEvents).values({
         id: randomUUID(),
