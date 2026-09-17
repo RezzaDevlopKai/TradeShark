@@ -50,7 +50,7 @@ async function cleanup(ids: { users: string[]; assets: string[]; market: string;
 integration("PostgreSQL persistent execution integration", () => {
   afterAll(async () => client?.pool.end());
 
-  it("matches a buy against the best sell, settles the ledger, and is safe to replay", async () => {
+  it("matches a buy against the best sell, settles the ledger, persists the fee, and is safe to replay", async () => {
     if (!client) throw new Error("DATABASE_URL is required");
     const buyerId = randomUUID(), sellerId = randomUUID(), baseId = randomUUID(), quoteId = randomUUID(), marketId = randomUUID();
     const buyerQuoteAvailable = randomUUID(), buyerQuoteLocked = randomUUID(), buyerBaseAvailable = randomUUID(), buyerBaseLocked = randomUUID();
@@ -72,6 +72,8 @@ integration("PostgreSQL persistent execution integration", () => {
       const execution = await executeLimitOrder(client.db, { orderId: buy.id });
       expect(execution.idempotent).toBe(false); expect(execution.status).toBe("filled"); expect(execution.remainingQuantity).toBe("0.000000000000000000"); expect(execution.trades).toHaveLength(1);
       expect(execution.trades[0]?.price).toBe("10.000000000000000000"); expect(execution.trades[0]?.quantity).toBe("1.000000000000000000"); expect(execution.trades[0]?.feeAmount).toBe("0.055000000000000000"); expect(execution.trades[0]?.releasedQuoteAmount).toBe("2.011000000000000000");
+      const persistedTrade = await client.pool.query(`SELECT price::text AS price, quantity::text AS quantity, fee_amount::text AS fee_amount FROM trades WHERE id = $1`, [execution.trades[0]!.tradeId]);
+      expect(persistedTrade.rows[0]).toEqual({ price: "10.000000000000000000", quantity: "1.000000000000000000", fee_amount: "0.055000000000000000" });
       expect(await balance(buyerQuoteLocked)).toBe("0.000000000000000000"); expect(await balance(buyerQuoteAvailable)).toBe("89.945000000000000000"); expect(await balance(buyerBaseAvailable)).toBe("1.000000000000000000"); expect(await balance(sellerBaseLocked)).toBe("0.000000000000000000"); expect(await balance(sellerQuoteAvailable)).toBe("10.000000000000000000"); expect(await balance(feeRevenue)).toBe("0.055000000000000000");
       const replay = await executeLimitOrder(client.db, { orderId: buy.id });
       expect(replay.idempotent).toBe(true); expect(replay.trades).toHaveLength(0);
@@ -101,6 +103,8 @@ integration("PostgreSQL persistent execution integration", () => {
       const execution = await executeLimitOrder(client.db, { orderId: buy.id });
       expect(execution.status).toBe("partially_filled"); expect(execution.remainingQuantity).toBe("1.000000000000000000"); expect(execution.trades).toHaveLength(1);
       expect(await balance(buyerQuoteLocked)).toBe("10.055000000000000000"); expect(await balance(buyerQuoteAvailable)).toBe("79.890000000000000000");
+      const persistedTrade = await client.pool.query(`SELECT fee_amount::text AS fee_amount FROM trades WHERE id = $1`, [execution.trades[0]!.tradeId]);
+      expect(persistedTrade.rows[0]?.fee_amount).toBe("0.055000000000000000");
       const cancelled = await cancelLimitOrder(client.db, { userId: buyerId, orderId: buy.id });
       expect(cancelled.releasedAmount).toBe("10.055000000000000000"); expect(await balance(buyerQuoteLocked)).toBe("0.000000000000000000"); expect(await balance(buyerQuoteAvailable)).toBe("89.945000000000000000");
     } finally {
