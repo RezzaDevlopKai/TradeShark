@@ -45,6 +45,28 @@ describe("trading core", () => {
     expect(result.takerRemaining).toBe("0.000000000000000000");
   });
 
+  it("passes stable maker identity and fill quantity into trade id generation", () => {
+    const calls: Array<{ index: number; makerId: string; makerRemaining: string | undefined; quantity: string }> = [];
+    const result = matchLimitOrder(
+      maker("taker", "buyer", "buy", "10", "3", 2),
+      [maker("maker-a", "seller-a", "sell", "9", "1", 1), maker("maker-b", "seller-b", "sell", "9", "2", 2)],
+      "0.0055",
+      (index, makerOrder, quantity) => {
+        calls.push({ index, makerId: makerOrder.id, makerRemaining: makerOrder.remainingQuantity, quantity });
+        return `trade-${makerOrder.id}-${quantity}`;
+      }
+    );
+
+    expect(result.trades.map((trade) => trade.id)).toEqual([
+      "trade-maker-a-1.000000000000000000",
+      "trade-maker-b-2.000000000000000000"
+    ]);
+    expect(calls).toEqual([
+      { index: 0, makerId: "maker-a", makerRemaining: undefined, quantity: "1.000000000000000000" },
+      { index: 1, makerId: "maker-b", makerRemaining: undefined, quantity: "2.000000000000000000" }
+    ]);
+  });
+
   it("partially fills a maker and leaves the remainder on the book", () => {
     const result = matchLimitOrder(
       maker("taker", "buyer", "buy", "10", "3", 2),
