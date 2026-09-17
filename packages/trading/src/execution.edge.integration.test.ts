@@ -64,7 +64,7 @@ integration("PostgreSQL execution edge integration", () => {
       await client.pool.query(`INSERT INTO markets (id, symbol, base_asset_id, quote_asset_id, is_active) VALUES ($1, $2, $3, $4, true)`, [marketId, `STB/STQ-${marketId.slice(0, 6)}`, baseId, quoteId]);
       await createAccount(buyerQuoteAvailable, buyerId, quoteId, "USER_AVAILABLE"); await createAccount(buyerQuoteLocked, buyerId, quoteId, "USER_LOCKED"); await createAccount(buyerBaseAvailable, buyerId, baseId, "USER_AVAILABLE"); await createAccount(buyerBaseLocked, buyerId, baseId, "USER_LOCKED");
       await createAccount(sellerQuoteAvailable, sellerId, quoteId, "USER_AVAILABLE"); await createAccount(sellerQuoteLocked, sellerId, quoteId, "USER_LOCKED"); await createAccount(sellerBaseAvailable, sellerId, baseId, "USER_AVAILABLE"); await createAccount(sellerBaseLocked, sellerId, baseId, "USER_LOCKED");
-      await createAccount(quoteTreasury, null, quoteId, "TREASURY", false); await createAccount(baseTreasury, null, baseId, "TREASURY", false); await createAccount(feeRevenue, null, quoteId, "FEE_REVENUE", false);
+      await createAccount(quoteTreasury, null, quoteId, "TREASURY", false); await createAccount(baseTreasury, null, baseId, "TREASURY", false); await createAccount(feeRevenue, null, quoteId, "FEE_REVENUE", true);
       await seed(buyerQuoteAvailable, quoteTreasury, "50", quoteSeed); await seed(sellerBaseAvailable, baseTreasury, "2", baseSeed);
       const buy = await placeLimitOrder(client.db, { userId: buyerId, marketId, side: "buy", price: "12", quantity: "1", clientOrderId: `edge-buy-${buyerId}` });
       const sell = await placeLimitOrder(client.db, { userId: sellerId, marketId, side: "sell", price: "10", quantity: "1", clientOrderId: `edge-sell-${sellerId}` });
