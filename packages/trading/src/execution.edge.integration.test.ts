@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { afterAll, describe, expect, it } from "vitest";
 import { createDatabase, postJournal } from "@tradeshark/database";
 import { cancelLimitOrder, placeLimitOrder } from "./index.js";
-import { executeLimitOrder } from "./execution.js";
+import { executeLimitOrder } from "./execution.ts";
 
 const databaseUrl = process.env.DATABASE_URL;
 const integration = databaseUrl ? describe : describe.skip;
@@ -113,7 +113,7 @@ integration("PostgreSQL execution edge integration", () => {
     const orderIds: string[] = [];
     try {
       await createUser(buyerId, "rollbackbuyer"); await createUser(sellerId, "rollbackseller"); await createAsset(baseId, "RBB"); await createAsset(quoteId, "RBQ");
-      await client.pool.query(`INSERT INTO markets (id, symbol, base_asset_id, quote_asset_id, is_active) VALUES ($1, $2, $3, $4, true)`, [marketId, `RBB/RBQ-${marketId.slice(0, 6)}`, baseId, quoteId]);
+      await client.pool.query(`INSERT INTO markets (id, symbol, base_asset_id, quote_asset_id, is_active) VALUES ($1, $2, $3, $4, true)` , [marketId, `RBB/RBQ-${marketId.slice(0, 6)}`, baseId, quoteId]);
       await createAccount(buyerQuoteAvailable, buyerId, quoteId, "USER_AVAILABLE"); await createAccount(buyerQuoteLocked, buyerId, quoteId, "USER_LOCKED"); await createAccount(buyerBaseAvailable, buyerId, baseId, "USER_AVAILABLE"); await createAccount(buyerBaseLocked, buyerId, baseId, "USER_LOCKED");
       await createAccount(sellerQuoteAvailable, sellerId, quoteId, "USER_AVAILABLE"); await createAccount(sellerQuoteLocked, sellerId, quoteId, "USER_LOCKED"); await createAccount(sellerBaseAvailable, sellerId, baseId, "USER_AVAILABLE"); await createAccount(sellerBaseLocked, sellerId, baseId, "USER_LOCKED");
       await createAccount(quoteTreasury, null, quoteId, "TREASURY", false); await createAccount(baseTreasury, null, baseId, "TREASURY", false); await createAccount(feeRevenue, null, quoteId, "FEE_REVENUE", false);
