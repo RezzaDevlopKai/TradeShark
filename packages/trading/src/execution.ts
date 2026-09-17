@@ -105,31 +105,23 @@ export async function executeLimitOrder(db: TradeSharkDatabase, input: ExecuteLi
         sellerLockedBaseAccountId: sellerAccounts.lockedBase.id, sellerAvailableQuoteAccountId: sellerAccounts.availableQuote.id, feeRevenueQuoteAccountId: feeAccount.id
       });
 
-      const feeAmount = settlement.feeAmount;
-      if (!feeAmount) throw new Error(`Trade ${matched.id} returned an empty settlement fee`);
+      if (!settlement.feeAmount) throw new Error(`Trade ${matched.id} returned an empty settlement fee`);
 
       await tx
         .insert(trades)
-        .values({ id: matched.id, marketId: market.id, buyOrderId: matched.buyOrderId, sellOrderId: matched.sellOrderId, price: matched.price, quantity: matched.quantity, feeAmount });
+        .values({ id: matched.id, marketId: market.id, buyOrderId: matched.buyOrderId, sellOrderId: matched.sellOrderId, price: matched.price, quantity: matched.quantity, feeAmount: settlement.feeAmount });
 
-      const persistedRows = await tx.execute(sql`
-        SELECT id, market_id, buy_order_id, sell_order_id, price::text AS price, quantity::text AS quantity, fee_amount::text AS fee_amount
-        FROM trades
-        WHERE id = ${matched.id}
-        FOR UPDATE
-      `);
-      const persistedTrade = persistedRows.rows[0] as
-        | { id: string; market_id: string; buy_order_id: string; sell_order_id: string; price: string; quantity: string; fee_amount: string }
-        | undefined;
-      if (!persistedTrade || !persistedTrade.fee_amount) throw new Error(`Trade ${matched.id} was persisted without a fee amount`);
-
+      // The settlement result is the authoritative execution value: it is calculated
+      // and journaled inside this same transaction, while the trade row is persisted
+      // with the exact same fee. Avoid depending on driver-specific RETURNING/result
+      // mapping for the public execution response.
       executedTrades.push({
-        tradeId: persistedTrade.id,
-        buyOrderId: persistedTrade.buy_order_id,
-        sellOrderId: persistedTrade.sell_order_id,
-        price: normalizeDecimal(persistedTrade.price),
-        quantity: normalizeDecimal(persistedTrade.quantity),
-        feeAmount: normalizeDecimal(persistedTrade.fee_amount),
+        tradeId: matched.id,
+        buyOrderId: matched.buyOrderId,
+        sellOrderId: matched.sellOrderId,
+        price: normalizeDecimal(matched.price),
+        quantity: normalizeDecimal(matched.quantity),
+        feeAmount: normalizeDecimal(settlement.feeAmount),
         releasedQuoteAmount: settlement.releasedQuoteAmount
       });
     }
