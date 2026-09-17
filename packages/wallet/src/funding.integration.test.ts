@@ -44,7 +44,7 @@ integration("PostgreSQL wallet funding integration", () => {
           ($7, $5, $2, 'USER_AVAILABLE', $8),
           ($9, $5, $2, 'USER_LOCKED', $10),
           ($11, $5, $2, 'USER_PENDING_WITHDRAWAL', $12)`,
-        [externalId, assetId, `wallet-external:${externalId}`, pendingDepositId, userId, `wallet-pending-deposit:${pendingDepositId}`, availableId, userId, `wallet-available:${availableId}`, lockedId, `wallet-locked:${lockedId}`, pendingWithdrawalId, `wallet-pending-withdrawal:${pendingWithdrawalId}`]
+        [externalId, assetId, `wallet-external:${externalId}`, pendingDepositId, userId, `wallet-pending-deposit:${pendingDepositId}`, availableId, `wallet-available:${availableId}`, lockedId, `wallet-locked:${lockedId}`, pendingWithdrawalId, `wallet-pending-withdrawal:${pendingWithdrawalId}`]
       );
       await client.pool.query(`INSERT INTO ledger_balance_projections (account_id, balance, version) VALUES ($1, 0, 0), ($2, 0, 0), ($3, 0, 0)`, [pendingDepositId, availableId, lockedId]);
       await client.pool.query(`INSERT INTO deposits (id, user_id, asset_id, pending_account_id, amount, status, external_reference) VALUES ($1, $2, $3, $4, $5, 'pending', $6)`, [depositId, userId, assetId, pendingDepositId, depositAmount, `deposit-ext:${depositId}`]);
