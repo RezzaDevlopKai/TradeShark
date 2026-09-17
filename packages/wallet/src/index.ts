@@ -12,6 +12,7 @@ export * from "./deposit.js";
 export * from "./funding.js";
 export * from "./lifecycle.js";
 export * from "./manualDeposit.js";
+export * from "./withdrawalLifecycle.js";
 
 export type WalletBalance = {
   accountId: string;
