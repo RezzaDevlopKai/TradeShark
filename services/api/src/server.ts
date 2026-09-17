@@ -19,7 +19,7 @@ export function createApiServer(identity: IdentityService | null) {
   }
 
   async function readJson(req: IncomingMessage): Promise<Record<string, unknown> | null> {
-    const contentType = req.headers["content-type"]?.split(";", 1)[0].trim().toLowerCase();
+    const contentType = (req.headers["content-type"]?.split(";", 1)[0] ?? "").trim().toLowerCase();
     if (contentType !== "application/json") return null;
 
     const contentLength = Number(req.headers["content-length"] ?? 0);
