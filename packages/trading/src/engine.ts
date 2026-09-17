@@ -92,7 +92,7 @@ export function matchLimitOrder(
   taker: LimitOrder,
   makers: readonly LimitOrder[],
   feeRate = "0.0055",
-  tradeIdFactory: (index: number) => string = (index) => `${taker.id}:trade:${index}`
+  tradeIdFactory: (index: number, maker: LimitOrder, quantity: string) => string = (index) => `${taker.id}:trade:${index}`
 ): MatchResult {
   validateLimitOrder(taker);
   let takerRemaining = remaining(taker);
@@ -122,6 +122,7 @@ export function matchLimitOrder(
     if (takerRemaining === 0n) break;
     const makerRemaining = remaining(maker);
     const quantity = makerRemaining < takerRemaining ? makerRemaining : takerRemaining;
+    const quantityText = formatDecimal(quantity);
     const price = parseDecimal(maker.price, "price");
     const buyerFeeRate = taker.side === "buy" ? (taker.feeRate ?? feeRate) : (maker.feeRate ?? feeRate);
     const feeRateScaled = parseDecimal(buyerFeeRate, "feeRate");
@@ -129,11 +130,11 @@ export function matchLimitOrder(
     const feeAmount = (grossQuote * feeRateScaled) / SCALE_FACTOR;
 
     trades.push({
-      id: tradeIdFactory(trades.length),
+      id: tradeIdFactory(trades.length, maker, quantityText),
       buyOrderId: taker.side === "buy" ? taker.id : maker.id,
       sellOrderId: taker.side === "sell" ? taker.id : maker.id,
       price: formatDecimal(price),
-      quantity: formatDecimal(quantity),
+      quantity: quantityText,
       feeRate: formatDecimal(feeRateScaled),
       feeAmount: formatDecimal(feeAmount)
     });
