@@ -84,3 +84,6 @@ jobs:
 
       - name: Run PostgreSQL trading integration tests
         run: pnpm --filter @tradeshark/trading test
+
+      - name: Run PostgreSQL identity integration tests
+        run: pnpm --filter @tradeshark/identity test
