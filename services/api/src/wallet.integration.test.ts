@@ -47,7 +47,7 @@ integration("API wallet integration", () => {
         `INSERT INTO ledger_accounts (id, user_id, asset_id, account_type, code) VALUES
           ($1, NULL, $2, 'EXTERNAL_SETTLEMENT', $3),
           ($4, $5, $2, 'USER_PENDING_DEPOSIT', $6),
-          ($7, $5, $2, 'USER_AVAILABLE', $8)`,
+          ($7, $8, $2, 'USER_AVAILABLE', $9)`,
         [externalId, assetId, `api-wallet-external:${externalId}`, pendingId, userId, `api-wallet-pending:${pendingId}`, availableId, userId, `api-wallet-available:${availableId}`]
       );
       await database.pool.query(`INSERT INTO ledger_balance_projections (account_id, balance, version) VALUES ($1, 0, 0), ($2, 0, 0)`, [pendingId, availableId]);
