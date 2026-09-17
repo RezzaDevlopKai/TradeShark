@@ -92,4 +92,29 @@ integration("PostgreSQL withdrawal settlement evidence", () => {
       expect([firstReference, secondReference]).toContain(row.rows[0]?.external_reference);
     } finally { await cleanup(seed); }
   });
+
+  it("treats concurrent confirmations with the same settlement reference as one idempotent operation", async () => {
+    if (!client) throw new Error("DATABASE_URL is required");
+    const seed = await seedSubmittedWithdrawal();
+    const reference = `tx:same:${seed.withdrawalId}`;
+    try {
+      const results = await Promise.all([
+        confirmWithdrawalWithSettlementAtomically(client.db, seed.withdrawalId, reference),
+        confirmWithdrawalWithSettlementAtomically(client.db, seed.withdrawalId, reference)
+      ]);
+
+      expect(results.map((result) => result.transactionId)).toEqual([results[0].transactionId, results[0].transactionId]);
+      expect(results.filter((result) => !result.idempotent)).toHaveLength(1);
+      expect(results.filter((result) => result.idempotent)).toHaveLength(1);
+
+      const journalRows = await client.pool.query(`SELECT id, metadata->>'externalReference' AS external_reference FROM journal_transactions WHERE idempotency_key = $1`, [`withdrawal:${seed.withdrawalId}:confirm`]);
+      expect(journalRows.rows).toHaveLength(1);
+      expect(journalRows.rows[0]?.external_reference).toBe(reference);
+
+      const row = await client.pool.query(`SELECT status, external_reference, confirmed_at FROM withdrawals WHERE id = $1`, [seed.withdrawalId]);
+      expect(row.rows[0]?.status).toBe("confirmed");
+      expect(row.rows[0]?.external_reference).toBe(reference);
+      expect(row.rows[0]?.confirmed_at).not.toBeNull();
+    } finally { await cleanup(seed); }
+  });
 });
