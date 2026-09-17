@@ -192,6 +192,53 @@ integration("PostgreSQL manual deposit lifecycle", () => {
     }
   });
 
+  it("serializes concurrent approval and rejection so exactly one terminal outcome is committed", async () => {
+    if (!client) throw new Error("DATABASE_URL is required");
+    const fixture = await createWalletFixture();
+    const depositIds: string[] = [];
+
+    try {
+      const created = await createManualDepositRequest(client.db, {
+        userId: fixture.userId,
+        assetId: fixture.assetId,
+        amount: "17.25"
+      });
+      depositIds.push(created.depositId);
+
+      const results = await Promise.allSettled([
+        approveManualDeposit(client.db, created.depositId, fixture.userId),
+        rejectManualDeposit(client.db, created.depositId, fixture.userId, "payment not received")
+      ]);
+
+      expect(results.filter((result) => result.status === "fulfilled")).toHaveLength(1);
+      expect(results.filter((result) => result.status === "rejected")).toHaveLength(1);
+
+      const state = await client.pool.query(`SELECT status FROM deposits WHERE id = $1`, [created.depositId]);
+      const status = state.rows[0].status;
+      expect(["credited", "failed"]).toContain(status);
+
+      const journals = await client.pool.query(`SELECT idempotency_key, count(*)::int AS count FROM journal_transactions WHERE reference_id = $1 GROUP BY idempotency_key`, [created.depositId]);
+      if (status === "credited") {
+        expect(journals.rows).toHaveLength(2);
+        expect(journals.rows.every((row) => row.count === 1)).toBe(true);
+      } else {
+        expect(journals.rows).toHaveLength(0);
+      }
+
+      const balances = await client.pool.query(`SELECT account_id, balance::text FROM ledger_balance_projections WHERE account_id = ANY($1::uuid[])`, [[fixture.pendingId, fixture.availableId]]);
+      const byAccount = new Map(balances.rows.map((row) => [row.account_id, row.balance]));
+      if (status === "credited") {
+        expect(byAccount.get(fixture.pendingId)).toBe("0.000000000000000000");
+        expect(byAccount.get(fixture.availableId)).toBe("17.250000000000000000");
+      } else {
+        expect(byAccount.get(fixture.pendingId)).toBe("0.000000000000000000");
+        expect(byAccount.get(fixture.availableId)).toBe("0.000000000000000000");
+      }
+    } finally {
+      await cleanupWalletFixture(fixture, depositIds);
+    }
+  });
+
   it("rejects a pending request without creating any ledger journal or balance change", async () => {
     if (!client) throw new Error("DATABASE_URL is required");
     const fixture = await createWalletFixture();
