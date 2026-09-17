@@ -37,7 +37,7 @@ test.after(async () => {
   await once(server, "exit");
 });
 
-test("platform status exposes the web integration contract", async () => {
+test("platform status exposes the web integration contract and security headers", async () => {
   const response = await fetch(`${baseUrl}/api/v1/status`);
   assert.equal(response.status, 200);
   assert.deepEqual(await response.json(), {
@@ -45,6 +45,10 @@ test("platform status exposes the web integration contract", async () => {
     status: "operational",
     version: "0.1.0"
   });
+  assert.equal(response.headers.get("cache-control"), "no-store");
+  assert.equal(response.headers.get("x-content-type-options"), "nosniff");
+  assert.equal(response.headers.get("x-frame-options"), "DENY");
+  assert.equal(response.headers.get("referrer-policy"), "no-referrer");
 });
 
 test("unknown routes return a stable JSON error", async () => {
@@ -123,4 +127,22 @@ test("authentication endpoints reject malformed and invalid credentials", async 
   });
   assert.equal(invalidCredentials.status, 401);
   assert.deepEqual(await invalidCredentials.json(), { error: "Invalid email or password" });
+});
+
+test("authentication endpoints enforce JSON content type and body limits", async () => {
+  const unsupportedContentType = await fetch(`${baseUrl}/api/v1/auth/login`, {
+    method: "POST",
+    headers: { "content-type": "text/plain" },
+    body: JSON.stringify({ email: "missing@example.com", password: "wrong-password" })
+  });
+  assert.equal(unsupportedContentType.status, 400);
+  assert.deepEqual(await unsupportedContentType.json(), { error: "INVALID_REQUEST" });
+
+  const oversized = await fetch(`${baseUrl}/api/v1/auth/login`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ email: "a@example.com", password: "x".repeat(33_000) })
+  });
+  assert.equal(oversized.status, 400);
+  assert.deepEqual(await oversized.json(), { error: "INVALID_REQUEST" });
 });
