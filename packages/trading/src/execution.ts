@@ -38,6 +38,9 @@ export async function executeLimitOrder(db: TradeSharkDatabase, input: ExecuteLi
     const initialOrder = initial[0];
     if (!initialOrder) throw new Error("Order does not exist");
 
+    // A market-level transaction lock serializes matching for one order book.
+    // Order placement/cancellation still use row locks, while this lock makes
+    // the complete read -> match -> settle -> persist cycle deterministic.
     await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtextextended(${`tradeshark:match:${initialOrder.marketId}`}, 0))`);
 
     const takerRows = await tx
@@ -80,11 +83,12 @@ export async function executeLimitOrder(db: TradeSharkDatabase, input: ExecuteLi
       feeRate: normalizeDecimal(maker.feeRate)
     }));
 
-    const match = matchLimitOrder(takerForMatcher, makersForMatcher, normalizeDecimal(taker.feeRate), (index) => {
-      const maker = makerOrderRows[index];
-      if (!maker) throw new Error("Matched maker index is invalid");
-      return deterministicTradeId(taker.id, maker.id, index);
-    });
+    const match = matchLimitOrder(
+      takerForMatcher,
+      makersForMatcher,
+      normalizeDecimal(taker.feeRate),
+      (index, maker, quantity) => deterministicTradeId(taker.id, maker.id, maker.sequence, maker.remainingQuantity ?? maker.quantity, quantity, index)
+    );
 
     const executedTrades: ExecutedTrade[] = [];
     for (const matched of match.trades) {
@@ -129,8 +133,9 @@ async function getUserAccounts(tx: TradeTransaction, userId: string, baseAssetId
   return { availableBase: find(baseAssetId, "USER_AVAILABLE"), lockedBase: find(baseAssetId, "USER_LOCKED"), availableQuote: find(quoteAssetId, "USER_AVAILABLE"), lockedQuote: find(quoteAssetId, "USER_LOCKED") };
 }
 
-function deterministicTradeId(takerOrderId: string, makerOrderId: string, index: number): string {
-  const bytes = Buffer.from(createHash("sha256").update(`trade:${takerOrderId}:${makerOrderId}:${index}`).digest().subarray(0, 16));
+function deterministicTradeId(takerOrderId: string, makerOrderId: string, makerSequence: number, makerRemainingQuantity: string, quantity: string, index: number): string {
+  const payload = `trade:${takerOrderId}:${makerOrderId}:${makerSequence}:${makerRemainingQuantity}:${quantity}:${index}`;
+  const bytes = Buffer.from(createHash("sha256").update(payload).digest().subarray(0, 16));
   bytes[6] = (bytes[6]! & 0x0f) | 0x50;
   bytes[8] = (bytes[8]! & 0x3f) | 0x80;
   const hex = bytes.toString("hex");
