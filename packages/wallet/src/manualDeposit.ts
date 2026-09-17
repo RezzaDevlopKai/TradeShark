@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { and, eq, inArray } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import type { TradeSharkDatabase } from "@tradeshark/database";
 import {
   auditEvents,
