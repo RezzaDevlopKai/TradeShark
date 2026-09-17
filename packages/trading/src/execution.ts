@@ -105,23 +105,22 @@ export async function executeLimitOrder(db: TradeSharkDatabase, input: ExecuteLi
         sellerLockedBaseAccountId: sellerAccounts.lockedBase.id, sellerAvailableQuoteAccountId: sellerAccounts.availableQuote.id, feeRevenueQuoteAccountId: feeAccount.id
       });
 
-      if (!settlement.feeAmount) throw new Error(`Trade ${matched.id} returned an empty settlement fee`);
+      const expectedFeeAmount = normalizeDecimal(matched.feeAmount);
+      if (settlement.feeAmount !== expectedFeeAmount) {
+        throw new Error(`Settlement fee mismatch for trade ${matched.id}: matcher=${expectedFeeAmount} settlement=${settlement.feeAmount}`);
+      }
 
       await tx
         .insert(trades)
-        .values({ id: matched.id, marketId: market.id, buyOrderId: matched.buyOrderId, sellOrderId: matched.sellOrderId, price: matched.price, quantity: matched.quantity, feeAmount: settlement.feeAmount });
+        .values({ id: matched.id, marketId: market.id, buyOrderId: matched.buyOrderId, sellOrderId: matched.sellOrderId, price: matched.price, quantity: matched.quantity, feeAmount: expectedFeeAmount });
 
-      // The settlement result is the authoritative execution value: it is calculated
-      // and journaled inside this same transaction, while the trade row is persisted
-      // with the exact same fee. Avoid depending on driver-specific RETURNING/result
-      // mapping for the public execution response.
       executedTrades.push({
         tradeId: matched.id,
         buyOrderId: matched.buyOrderId,
         sellOrderId: matched.sellOrderId,
         price: normalizeDecimal(matched.price),
         quantity: normalizeDecimal(matched.quantity),
-        feeAmount: normalizeDecimal(settlement.feeAmount),
+        feeAmount: expectedFeeAmount,
         releasedQuoteAmount: settlement.releasedQuoteAmount
       });
     }
