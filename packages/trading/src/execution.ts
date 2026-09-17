@@ -105,14 +105,17 @@ export async function executeLimitOrder(db: TradeSharkDatabase, input: ExecuteLi
         sellerLockedBaseAccountId: sellerAccounts.lockedBase.id, sellerAvailableQuoteAccountId: sellerAccounts.availableQuote.id, feeRevenueQuoteAccountId: feeAccount.id
       });
 
-      await tx.insert(trades).values({ id: matched.id, marketId: market.id, buyOrderId: matched.buyOrderId, sellOrderId: matched.sellOrderId, price: matched.price, quantity: matched.quantity, feeAmount: matched.feeAmount });
+      // The settlement layer is the financial source of truth for the fee.
+      // Return and persist that exact value so the public execution result,
+      // trade row, and ledger cannot disagree about the charged fee.
+      await tx.insert(trades).values({ id: matched.id, marketId: market.id, buyOrderId: matched.buyOrderId, sellOrderId: matched.sellOrderId, price: matched.price, quantity: matched.quantity, feeAmount: settlement.feeAmount });
       executedTrades.push({
         tradeId: matched.id,
         buyOrderId: matched.buyOrderId,
         sellOrderId: matched.sellOrderId,
         price: matched.price,
         quantity: matched.quantity,
-        feeAmount: matched.feeAmount,
+        feeAmount: settlement.feeAmount,
         releasedQuoteAmount: settlement.releasedQuoteAmount
       });
     }
