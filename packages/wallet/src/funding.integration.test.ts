@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import { afterAll, describe, expect, it } from "vitest";
 import { createDatabase } from "@tradeshark/database";
 import {
+  approveWithdrawalAtomically,
   confirmDepositAtomically,
   creditDepositAtomically,
   confirmWithdrawalAtomically,
@@ -69,8 +70,10 @@ integration("PostgreSQL wallet funding integration", () => {
       await client.pool.query(`INSERT INTO withdrawals (id, user_id, asset_id, pending_account_id, amount, status, destination) VALUES ($1, $2, $3, $4, $5, 'requested', $6)`, [withdrawalId, userId, assetId, pendingWithdrawalId, withdrawalAmount, "integration-destination"]);
       const locked = await requestWithdrawalAtomically(client.db, withdrawalId);
       expect(locked.idempotent).toBe(false);
-      const approved = await client.pool.query(`UPDATE withdrawals SET status = 'approved', updated_at = now() WHERE id = $1 RETURNING status`, [withdrawalId]);
-      expect(approved.rows[0].status).toBe("approved");
+      const approved = await approveWithdrawalAtomically(client.db, withdrawalId);
+      expect(approved).toEqual({ status: "approved", idempotent: false });
+      const approvalRetry = await approveWithdrawalAtomically(client.db, withdrawalId);
+      expect(approvalRetry).toEqual({ status: "approved", idempotent: true });
       const submitted = await submitWithdrawalAtomically(client.db, withdrawalId);
       expect(submitted.idempotent).toBe(false);
       const confirmedWithdrawal = await confirmWithdrawalAtomically(client.db, withdrawalId);
@@ -110,7 +113,8 @@ integration("PostgreSQL wallet funding integration", () => {
       await postJournal(client.db, { transactionId: seedTransactionId, idempotencyKey: seedKey, referenceType: "wallet_integration_seed", entries: [{ accountId: externalId, direction: "debit", amount: "20" }, { accountId: availableId, direction: "credit", amount: "20" }] });
       await client.pool.query(`INSERT INTO withdrawals (id, user_id, asset_id, pending_account_id, amount, status, destination) VALUES ($1, $2, $3, $4, 7, 'requested', 'integration-failure')`, [withdrawalId, userId, assetId, pendingWithdrawalId]);
       await requestWithdrawalAtomically(client.db, withdrawalId);
-      await client.pool.query(`UPDATE withdrawals SET status = 'approved', updated_at = now() WHERE id = $1`, [withdrawalId]);
+      const approved = await approveWithdrawalAtomically(client.db, withdrawalId);
+      expect(approved).toEqual({ status: "approved", idempotent: false });
       const failed = await failWithdrawalAtomically(client.db, withdrawalId);
       expect(failed.idempotent).toBe(false);
       const retry = await failWithdrawalAtomically(client.db, withdrawalId);
