@@ -70,10 +70,23 @@ test("authentication endpoints manage an HttpOnly session", async () => {
   });
   assert.equal(registration.status, 201);
   const registrationBody = await registration.json() as {
-    user: { email: string; username: string };
+    user: {
+      id: string;
+      email: string;
+      username: string;
+      status: string;
+      createdAt: string;
+      updatedAt: string;
+    };
     expiresAt: string;
   };
-  assert.deepEqual(registrationBody.user, { email, username });
+  assert.equal(registrationBody.user.email, email);
+  assert.equal(registrationBody.user.username, username);
+  assert.equal(registrationBody.user.status, "active");
+  assert.ok(registrationBody.user.id);
+  assert.ok(registrationBody.user.createdAt);
+  assert.ok(registrationBody.user.updatedAt);
+  assert.ok(registrationBody.expiresAt);
   assert.match(registration.headers.get("set-cookie") ?? "", /tradeshark_session=/);
   assert.match(registration.headers.get("set-cookie") ?? "", /HttpOnly/);
 
