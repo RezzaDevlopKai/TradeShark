@@ -88,5 +88,8 @@ jobs:
       - name: Run PostgreSQL identity integration tests
         run: pnpm --filter @tradeshark/identity test
 
+      - name: Run authorization policy tests
+        run: pnpm --filter @tradeshark/authorization test
+
       - name: Run API authentication integration tests
         run: pnpm --filter @tradeshark/api test
