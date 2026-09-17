@@ -73,7 +73,7 @@ async function assertReconciled(seed: Awaited<ReturnType<typeof seedWithdrawal>>
   for (const accountId of [seed.availableId, seed.lockedId, seed.pendingId]) {
     const reconciliation = await reconcileLedgerBalance(client.db, accountId);
     expect(reconciliation.consistent).toBe(true);
-    expect(reconciliation.difference).toBe("0");
+    expect(reconciliation.difference).toMatch(/^-?0(?:\.0+)?$/);
     expect(reconciliation.projectedBalance).toBe(reconciliation.ledgerBalance);
   }
 }
