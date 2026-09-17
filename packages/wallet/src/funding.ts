@@ -397,10 +397,10 @@ export async function confirmWithdrawalAtomically(
  * from USER_PENDING_WITHDRAWAL because the external settlement has not
  * completed successfully.
  *
- * Lock ordering is deliberately projection -> withdrawal row, matching the
- * settlement path. This prevents a failure transaction from holding the
- * withdrawal row while waiting on a customer balance projection that a
- * concurrent settlement transaction already owns.
+ * The pending-withdrawal projection is the serialization point for submitted
+ * settlement races. For requested/pending/approved withdrawals, no pending
+ * funds exist yet, so the USER_LOCKED projection is the correct serialization
+ * point. In both cases the projection is locked before the withdrawal row.
  */
 export async function failWithdrawalAtomically(
   db: TradeSharkDatabase,
@@ -410,7 +410,11 @@ export async function failWithdrawalAtomically(
     const initialRows = await tx
       .select({
         id: withdrawals.id,
-        pendingAccountId: withdrawals.pendingAccountId
+        userId: withdrawals.userId,
+        assetId: withdrawals.assetId,
+        pendingAccountId: withdrawals.pendingAccountId,
+        amount: withdrawals.amount,
+        status: withdrawals.status
       })
       .from(withdrawals)
       .where(eq(withdrawals.id, withdrawalId))
@@ -419,15 +423,42 @@ export async function failWithdrawalAtomically(
     const initialWithdrawal = initialRows[0];
     if (!initialWithdrawal) throw new Error(`Withdrawal ${withdrawalId} was not found`);
 
-    const projectionRows = await tx
+    const projectionAccountId = initialWithdrawal.pendingAccountId;
+    let projectionRows = await tx
       .select({ accountId: ledgerBalanceProjections.accountId })
       .from(ledgerBalanceProjections)
-      .where(eq(ledgerBalanceProjections.accountId, initialWithdrawal.pendingAccountId))
+      .where(eq(ledgerBalanceProjections.accountId, projectionAccountId))
       .for("update")
       .limit(1);
 
     if (!projectionRows[0]) {
-      throw new Error("Withdrawal pending ledger balance projection does not exist");
+      const lockedRows = await tx
+        .select({ id: ledgerAccounts.id })
+        .from(ledgerAccounts)
+        .where(
+          and(
+            eq(ledgerAccounts.userId, initialWithdrawal.userId),
+            eq(ledgerAccounts.assetId, initialWithdrawal.assetId),
+            eq(ledgerAccounts.accountType, "USER_LOCKED")
+          )
+        )
+        .limit(1);
+
+      const lockedAccount = lockedRows[0];
+      if (!lockedAccount) {
+        throw new Error("Required USER_LOCKED ledger account does not exist");
+      }
+
+      projectionRows = await tx
+        .select({ accountId: ledgerBalanceProjections.accountId })
+        .from(ledgerBalanceProjections)
+        .where(eq(ledgerBalanceProjections.accountId, lockedAccount.id))
+        .for("update")
+        .limit(1);
+
+      if (!projectionRows[0]) {
+        throw new Error("Withdrawal USER_LOCKED ledger balance projection does not exist");
+      }
     }
 
     const rows = await tx
