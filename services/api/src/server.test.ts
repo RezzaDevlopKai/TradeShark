@@ -194,6 +194,26 @@ test("authentication endpoints enforce JSON content type and body limits", async
   assert.deepEqual(await oversized.json(), { error: "INVALID_REQUEST" });
 });
 
+test("authentication login rate limiting returns Retry-After after repeated failures", async () => {
+  for (let attempt = 0; attempt < 10; attempt += 1) {
+    const response = await fetch(`${baseUrl}/api/v1/auth/login`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ email: `missing-${attempt}@example.com`, password: "wrong-password" })
+    });
+    assert.equal(response.status, 401);
+  }
+
+  const limited = await fetch(`${baseUrl}/api/v1/auth/login`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ email: "rate-limited@example.com", password: "wrong-password" })
+  });
+  assert.equal(limited.status, 429);
+  assert.deepEqual(await limited.json(), { error: "RATE_LIMITED" });
+  assert.ok(Number(limited.headers.get("retry-after")) > 0);
+});
+
 test("authentication registration rate limiting returns Retry-After after repeated malformed requests", async () => {
   for (let attempt = 0; attempt < 5; attempt += 1) {
     const response = await fetch(`${baseUrl}/api/v1/auth/register`, {
