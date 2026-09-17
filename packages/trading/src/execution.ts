@@ -6,7 +6,6 @@ import { matchLimitOrder, normalizeDecimal } from "./engine.js";
 import { settleTradeInTransaction } from "./settlement.js";
 
 const ZERO = "0.000000000000000000";
-const SCALE = 10n ** 18n;
 
 type ExecuteLimitOrderInput = { orderId: string };
 export type { ExecuteLimitOrderInput };
@@ -39,9 +38,6 @@ export async function executeLimitOrder(db: TradeSharkDatabase, input: ExecuteLi
     const initialOrder = initial[0];
     if (!initialOrder) throw new Error("Order does not exist");
 
-    // A market-level transaction lock serializes matching for one order book.
-    // Order placement/cancellation still use row locks, while this lock makes
-    // the complete read -> match -> settle -> persist cycle deterministic.
     await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtextextended(${`tradeshark:match:${initialOrder.marketId}`}, 0))`);
 
     const takerRows = await tx
@@ -109,26 +105,16 @@ export async function executeLimitOrder(db: TradeSharkDatabase, input: ExecuteLi
         sellerLockedBaseAccountId: sellerAccounts.lockedBase.id, sellerAvailableQuoteAccountId: sellerAccounts.availableQuote.id, feeRevenueQuoteAccountId: feeAccount.id
       });
 
-      const executionFeeAmount = calculateExecutionFee(matched.price, matched.quantity, matched.feeRate);
-      await tx.insert(trades).values({ id: matched.id, marketId: market.id, buyOrderId: matched.buyOrderId, sellOrderId: matched.sellOrderId, price: matched.price, quantity: matched.quantity, feeAmount: executionFeeAmount });
-
-      // Assign the property explicitly so the API object cannot lose the fee
-      // field while crossing the transaction boundary.
-      const executedTrade = {
+      await tx.insert(trades).values({ id: matched.id, marketId: market.id, buyOrderId: matched.buyOrderId, sellOrderId: matched.sellOrderId, price: matched.price, quantity: matched.quantity, feeAmount: matched.feeAmount });
+      executedTrades.push({
         tradeId: matched.id,
         buyOrderId: matched.buyOrderId,
         sellOrderId: matched.sellOrderId,
         price: matched.price,
         quantity: matched.quantity,
+        feeAmount: matched.feeAmount,
         releasedQuoteAmount: settlement.releasedQuoteAmount
-      } as ExecutedTrade;
-      Object.defineProperty(executedTrade, "feeAmount", {
-        value: executionFeeAmount,
-        enumerable: true,
-        configurable: true,
-        writable: true
       });
-      executedTrades.push(executedTrade);
     }
 
     for (const maker of match.makerOrders) {
@@ -140,27 +126,6 @@ export async function executeLimitOrder(db: TradeSharkDatabase, input: ExecuteLi
 
     return { orderId: taker.id, status: nextStatus, remainingQuantity: match.takerRemaining, trades: executedTrades, idempotent: false };
   });
-}
-
-function calculateExecutionFee(price: string, quantity: string, feeRate: string): string {
-  const priceScaled = decimalToScaled(price);
-  const quantityScaled = decimalToScaled(quantity);
-  const feeRateScaled = decimalToScaled(feeRate);
-  const grossQuote = (priceScaled * quantityScaled) / SCALE;
-  const fee = (grossQuote * feeRateScaled) / SCALE;
-  return scaledToDecimal(fee);
-}
-
-function decimalToScaled(value: string): bigint {
-  const [whole = "0", fraction = ""] = value.split(".");
-  if (!/^\d+$/.test(whole) || !/^\d{0,18}$/.test(fraction)) throw new Error(`Invalid normalized decimal: ${value}`);
-  return BigInt(whole) * SCALE + BigInt(fraction.padEnd(18, "0") || "0");
-}
-
-function scaledToDecimal(value: bigint): string {
-  const whole = value / SCALE;
-  const fraction = (value % SCALE).toString().padStart(18, "0");
-  return `${whole}.${fraction}`;
 }
 
 async function getUserAccounts(tx: TradeTransaction, userId: string, baseAssetId: string, quoteAssetId: string) {
