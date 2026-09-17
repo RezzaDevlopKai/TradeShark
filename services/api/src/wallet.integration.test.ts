@@ -71,17 +71,15 @@ integration("API wallet integration", () => {
         }]
       });
     } finally {
-      server.close();
-      if (userId) {
-        await database.pool.query(`DELETE FROM auth_sessions WHERE user_id = $1`, [userId]);
-        await database.pool.query(`DELETE FROM user_credentials WHERE user_id = $1`, [userId]);
-        await database.pool.query(`DELETE FROM users WHERE id = $1`, [userId]);
-      }
+      await new Promise<void>((resolve) => server.close(() => resolve()));
       await database.pool.query(`DELETE FROM journal_entries WHERE transaction_id IN (SELECT id FROM journal_transactions WHERE reference_id = $1)`, [depositId]);
       await database.pool.query(`DELETE FROM journal_transactions WHERE reference_id = $1`, [depositId]);
       await database.pool.query(`DELETE FROM deposits WHERE id = $1`, [depositId]);
       await database.pool.query(`DELETE FROM ledger_balance_projections WHERE account_id = ANY($1::uuid[])`, [[pendingId, availableId]]);
       await database.pool.query(`DELETE FROM ledger_accounts WHERE id = ANY($1::uuid[])`, [[externalId, pendingId, availableId]]);
+      await database.pool.query(`DELETE FROM auth_sessions WHERE user_id = $1`, [userId]);
+      await database.pool.query(`DELETE FROM user_credentials WHERE user_id = $1`, [userId]);
+      await database.pool.query(`DELETE FROM users WHERE id = $1`, [userId]);
       await database.pool.query(`DELETE FROM assets WHERE id = $1`, [assetId]);
     }
   });
