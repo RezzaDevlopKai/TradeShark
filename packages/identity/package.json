@@ -15,7 +15,8 @@
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
-    "@tradeshark/database": "workspace:*"
+    "@tradeshark/database": "workspace:*",
+    "drizzle-orm": "^0.44.7"
   },
   "devDependencies": {
     "@types/node": "^22.18.0",
