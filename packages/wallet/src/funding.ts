@@ -113,6 +113,8 @@ export async function creditDepositAtomically(
       ]
     });
 
+    if (result.idempotent) return result;
+
     const updated = await tx
       .update(deposits)
       .set({ status: "credited", creditedAt: new Date(), updatedAt: new Date() })
@@ -189,6 +191,8 @@ export async function requestWithdrawalAtomically(
         { accountId: locked.id, direction: "credit", amount: withdrawal.amount }
       ]
     });
+
+    if (result.idempotent) return result;
 
     const updated = await tx
       .update(withdrawals)
@@ -268,6 +272,8 @@ export async function submitWithdrawalAtomically(
         { accountId: pending.id, direction: "credit", amount: withdrawal.amount }
       ]
     });
+
+    if (result.idempotent) return result;
 
     const updated = await tx
       .update(withdrawals)
@@ -368,6 +374,8 @@ export async function confirmWithdrawalAtomically(
       ]
     });
 
+    if (result.idempotent) return result;
+
     const updated = await tx
       .update(withdrawals)
       .set({ status: "confirmed", confirmedAt: new Date(), updatedAt: new Date() })
@@ -461,6 +469,8 @@ export async function failWithdrawalAtomically(
         { accountId: available.id, direction: "credit", amount: withdrawal.amount }
       ]
     });
+
+    if (result.idempotent) return result;
 
     const updated = await tx
       .update(withdrawals)
