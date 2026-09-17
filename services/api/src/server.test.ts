@@ -9,10 +9,10 @@ const baseUrl = `http://127.0.0.1:${port}`;
 
 let server: ChildProcess | undefined;
 
-async function waitForHealth() {
+async function waitForHealth(url = baseUrl) {
   for (let attempt = 0; attempt < 30; attempt += 1) {
     try {
-      const response = await fetch(`${baseUrl}/health`);
+      const response = await fetch(`${url}/health`);
       if (response.ok) return;
     } catch {
       // The child may need another moment to bind the port.
@@ -20,6 +20,23 @@ async function waitForHealth() {
     await new Promise((resolve) => setTimeout(resolve, 100));
   }
   throw new Error("API server did not become healthy within 3 seconds");
+}
+
+async function spawnTestServer() {
+  const testPort = 3600 + Math.floor(Math.random() * 500);
+  const testBaseUrl = `http://127.0.0.1:${testPort}`;
+  const testServer = spawn(process.execPath, ["--import", "tsx", "src/server.ts"], {
+    cwd: new URL("..", import.meta.url),
+    env: { ...process.env, HOST: "127.0.0.1", PORT: String(testPort) },
+    stdio: "ignore"
+  });
+  await waitForHealth(testBaseUrl);
+  return { server: testServer, baseUrl: testBaseUrl };
+}
+
+async function stopTestServer(testServer: ChildProcess) {
+  testServer.kill("SIGTERM");
+  await once(testServer, "exit");
 }
 
 test.before(async () => {
@@ -195,41 +212,51 @@ test("authentication endpoints enforce JSON content type and body limits", async
 });
 
 test("authentication login rate limiting returns Retry-After after repeated failures", async () => {
-  for (let attempt = 0; attempt < 10; attempt += 1) {
-    const response = await fetch(`${baseUrl}/api/v1/auth/login`, {
+  const isolated = await spawnTestServer();
+  try {
+    for (let attempt = 0; attempt < 10; attempt += 1) {
+      const response = await fetch(`${isolated.baseUrl}/api/v1/auth/login`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ email: `missing-${attempt}@example.com`, password: "wrong-password" })
+      });
+      assert.equal(response.status, 401);
+    }
+
+    const limited = await fetch(`${isolated.baseUrl}/api/v1/auth/login`, {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ email: `missing-${attempt}@example.com`, password: "wrong-password" })
+      body: JSON.stringify({ email: "rate-limited@example.com", password: "wrong-password" })
     });
-    assert.equal(response.status, 401);
+    assert.equal(limited.status, 429);
+    assert.deepEqual(await limited.json(), { error: "RATE_LIMITED" });
+    assert.ok(Number(limited.headers.get("retry-after")) > 0);
+  } finally {
+    await stopTestServer(isolated.server);
   }
-
-  const limited = await fetch(`${baseUrl}/api/v1/auth/login`, {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({ email: "rate-limited@example.com", password: "wrong-password" })
-  });
-  assert.equal(limited.status, 429);
-  assert.deepEqual(await limited.json(), { error: "RATE_LIMITED" });
-  assert.ok(Number(limited.headers.get("retry-after")) > 0);
 });
 
 test("authentication registration rate limiting returns Retry-After after repeated malformed requests", async () => {
-  for (let attempt = 0; attempt < 5; attempt += 1) {
-    const response = await fetch(`${baseUrl}/api/v1/auth/register`, {
+  const isolated = await spawnTestServer();
+  try {
+    for (let attempt = 0; attempt < 5; attempt += 1) {
+      const response = await fetch(`${isolated.baseUrl}/api/v1/auth/register`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: "[]"
+      });
+      assert.equal(response.status, 400);
+    }
+
+    const limited = await fetch(`${isolated.baseUrl}/api/v1/auth/register`, {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: "[]"
     });
-    assert.equal(response.status, 400);
+    assert.equal(limited.status, 429);
+    assert.deepEqual(await limited.json(), { error: "RATE_LIMITED" });
+    assert.ok(Number(limited.headers.get("retry-after")) > 0);
+  } finally {
+    await stopTestServer(isolated.server);
   }
-
-  const limited = await fetch(`${baseUrl}/api/v1/auth/register`, {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: "[]"
-  });
-  assert.equal(limited.status, 429);
-  assert.deepEqual(await limited.json(), { error: "RATE_LIMITED" });
-  assert.ok(Number(limited.headers.get("retry-after")) > 0);
 });
