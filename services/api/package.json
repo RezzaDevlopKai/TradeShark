@@ -8,7 +8,7 @@
     "dev": "tsx src/server.ts",
     "start": "node dist/server.js",
     "typecheck": "tsc --noEmit",
-    "test": "node --test"
+    "test": "tsx --test"
   },
   "devDependencies": {
     "@types/node": "^22.18.0",
