@@ -1,5 +1,6 @@
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { pathToFileURL } from "node:url";
+import { authorize } from "@tradeshark/authorization";
 import { createDatabase } from "@tradeshark/database";
 import { IdentityError, IdentityService } from "@tradeshark/identity";
 
@@ -9,6 +10,12 @@ const AUTH_LOGIN_LIMIT = 10;
 const AUTH_REGISTER_LIMIT = 5;
 
 type RateLimitBucket = { count: number; resetAt: number };
+
+type AuthenticatedIdentity = {
+  sessionId: string;
+  expiresAt: Date;
+  user: NonNullable<Awaited<ReturnType<IdentityService["validateSession"]>>>["user"];
+};
 
 export function createApiServer(identity: IdentityService | null) {
   const rateLimits = new Map<string, RateLimitBucket>();
@@ -104,6 +111,48 @@ export function createApiServer(identity: IdentityService | null) {
     return identity;
   }
 
+  async function authenticate(req: IncomingMessage, res: ServerResponse): Promise<AuthenticatedIdentity | null> {
+    const auth = requireIdentity(res);
+    if (!auth) return null;
+
+    const token = getSessionToken(req);
+    const result = token ? await auth.validateSession(token) : null;
+    if (!result) {
+      json(res, 401, { error: "UNAUTHENTICATED" });
+      return null;
+    }
+    return result;
+  }
+
+  function requirePermission(
+    res: ServerResponse,
+    session: AuthenticatedIdentity,
+    permission: Parameters<typeof authorize>[1],
+    ownerUserId?: string
+  ): boolean {
+    const decision = authorize(
+      {
+        userId: session.user.id,
+        role: "user",
+        status: session.user.status
+      },
+      permission,
+      ownerUserId
+    );
+
+    if (decision.allowed) return true;
+    if (decision.reason === "UNAUTHENTICATED") {
+      json(res, 401, { error: decision.reason });
+      return false;
+    }
+    if (decision.reason === "RESOURCE_OWNERSHIP_REQUIRED") {
+      json(res, 403, { error: decision.reason });
+      return false;
+    }
+    json(res, 403, { error: decision.reason });
+    return false;
+  }
+
   return createServer(async (req, res) => {
     try {
       const url = new URL(req.url ?? "/", `http://${req.headers.host ?? "localhost"}`);
@@ -192,13 +241,9 @@ export function createApiServer(identity: IdentityService | null) {
         }
 
         if (req.method === "GET" && url.pathname === "/api/v1/auth/session") {
-          const token = getSessionToken(req);
-          const result = token ? await auth.validateSession(token) : null;
-          if (!result) {
-            json(res, 401, { error: "UNAUTHENTICATED" });
-            return;
-          }
-          json(res, 200, { user: result.user, expiresAt: result.expiresAt });
+          const session = await authenticate(req, res);
+          if (!session) return;
+          json(res, 200, { user: session.user, expiresAt: session.expiresAt });
           return;
         }
 
@@ -209,6 +254,14 @@ export function createApiServer(identity: IdentityService | null) {
           json(res, 200, { loggedOut: true });
           return;
         }
+      }
+
+      if (req.method === "GET" && url.pathname === "/api/v1/account/me") {
+        const session = await authenticate(req, res);
+        if (!session) return;
+        if (!requirePermission(res, session, "account:read", session.user.id)) return;
+        json(res, 200, { user: session.user });
+        return;
       }
 
       json(res, 404, { error: "NOT_FOUND" });
