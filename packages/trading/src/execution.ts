@@ -109,12 +109,26 @@ export async function executeLimitOrder(db: TradeSharkDatabase, input: ExecuteLi
         sellerLockedBaseAccountId: sellerAccounts.lockedBase.id, sellerAvailableQuoteAccountId: sellerAccounts.availableQuote.id, feeRevenueQuoteAccountId: feeAccount.id
       });
 
-      // Keep the public execution result and persisted trade fee explicit and
-      // deterministic. This uses the same 18-decimal arithmetic as the ledger,
-      // without relying on a cross-module fee helper at this boundary.
       const executionFeeAmount = calculateExecutionFee(matched.price, matched.quantity, matched.feeRate);
       await tx.insert(trades).values({ id: matched.id, marketId: market.id, buyOrderId: matched.buyOrderId, sellOrderId: matched.sellOrderId, price: matched.price, quantity: matched.quantity, feeAmount: executionFeeAmount });
-      executedTrades.push({ tradeId: matched.id, buyOrderId: matched.buyOrderId, sellOrderId: matched.sellOrderId, price: matched.price, quantity: matched.quantity, feeAmount: executionFeeAmount, releasedQuoteAmount: settlement.releasedQuoteAmount });
+
+      // Assign the property explicitly so the API object cannot lose the fee
+      // field while crossing the transaction boundary.
+      const executedTrade = {
+        tradeId: matched.id,
+        buyOrderId: matched.buyOrderId,
+        sellOrderId: matched.sellOrderId,
+        price: matched.price,
+        quantity: matched.quantity,
+        releasedQuoteAmount: settlement.releasedQuoteAmount
+      } as ExecutedTrade;
+      Object.defineProperty(executedTrade, "feeAmount", {
+        value: executionFeeAmount,
+        enumerable: true,
+        configurable: true,
+        writable: true
+      });
+      executedTrades.push(executedTrade);
     }
 
     for (const maker of match.makerOrders) {
