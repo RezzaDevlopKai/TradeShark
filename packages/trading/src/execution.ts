@@ -109,7 +109,7 @@ export async function executeLimitOrder(db: TradeSharkDatabase, input: ExecuteLi
       });
 
       await tx.insert(trades).values({ id: matched.id, marketId: market.id, buyOrderId: matched.buyOrderId, sellOrderId: matched.sellOrderId, price: matched.price, quantity: matched.quantity, feeAmount: matched.feeAmount });
-      executedTrades.push({ tradeId: matched.id, buyOrderId: matched.buyOrderId, sellOrderId: matched.sellOrderId, price: matched.price, quantity: matched.quantity, feeAmount: settlement.feeAmount, releasedQuoteAmount: settlement.releasedQuoteAmount });
+      executedTrades.push({ tradeId: matched.id, buyOrderId: matched.buyOrderId, sellOrderId: matched.sellOrderId, price: matched.price, quantity: matched.quantity, feeAmount: matched.feeAmount, releasedQuoteAmount: settlement.releasedQuoteAmount });
     }
 
     for (const maker of match.makerOrders) {
