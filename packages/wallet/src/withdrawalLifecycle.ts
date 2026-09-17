@@ -12,8 +12,10 @@ export type WithdrawalApprovalResult = {
  *
  * Funds were already reserved by requestWithdrawalAtomically. Approval is
  * therefore a lifecycle-only transition; submitWithdrawalAtomically performs
- * the next ledger movement. The conditional UPDATE makes approval safe when
- * an approval/rejection retry races with another worker.
+ * the next ledger movement. The conditional UPDATE serializes competing
+ * transitions. If another transaction wins the race, re-read the committed
+ * state so a duplicate approval is reported as idempotent rather than as a
+ * spurious lifecycle error.
  */
 export async function approveWithdrawalAtomically(
   db: TradeSharkDatabase,
@@ -42,10 +44,20 @@ export async function approveWithdrawalAtomically(
       .where(and(eq(withdrawals.id, withdrawal.id), eq(withdrawals.status, "pending")))
       .returning({ id: withdrawals.id });
 
-    if (updated.length !== 1) {
-      throw new Error("Withdrawal lifecycle changed while approval was being applied");
+    if (updated.length === 1) {
+      return { status: "approved", idempotent: false };
     }
 
-    return { status: "approved", idempotent: false };
+    const afterRace = await tx
+      .select({ status: withdrawals.status })
+      .from(withdrawals)
+      .where(eq(withdrawals.id, withdrawal.id))
+      .limit(1);
+
+    if (afterRace[0]?.status === "approved") {
+      return { status: "approved", idempotent: true };
+    }
+
+    throw new Error("Withdrawal lifecycle changed while approval was being applied");
   });
 }
