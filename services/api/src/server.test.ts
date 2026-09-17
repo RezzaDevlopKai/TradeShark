@@ -63,7 +63,13 @@ test("protected account endpoint requires authentication", async () => {
   assert.deepEqual(await response.json(), { error: "UNAUTHENTICATED" });
 });
 
-test("authentication endpoints manage an HttpOnly session and protected account access", async () => {
+test("wallet balances endpoint requires authentication", async () => {
+  const response = await fetch(`${baseUrl}/api/v1/wallet/balances`);
+  assert.equal(response.status, 401);
+  assert.deepEqual(await response.json(), { error: "UNAUTHENTICATED" });
+});
+
+test("authentication endpoints manage an HttpOnly session and protected account and wallet access", async () => {
   const id = randomUUID().replaceAll("-", "").slice(0, 12);
   const email = `api-${id}@example.com`;
   const username = `api_${id}`;
@@ -114,6 +120,12 @@ test("authentication endpoints manage an HttpOnly session and protected account 
   assert.equal(account.status, 200);
   assert.deepEqual(await account.json(), { user: registrationBody.user });
 
+  const balances = await fetch(`${baseUrl}/api/v1/wallet/balances`, {
+    headers: { cookie }
+  });
+  assert.equal(balances.status, 200);
+  assert.deepEqual(await balances.json(), { balances: [] });
+
   const login = await fetch(`${baseUrl}/api/v1/auth/login`, {
     method: "POST",
     headers: { "content-type": "application/json" },
@@ -139,6 +151,11 @@ test("authentication endpoints manage an HttpOnly session and protected account 
     headers: { cookie }
   });
   assert.equal(protectedAfterLogout.status, 401);
+
+  const walletAfterLogout = await fetch(`${baseUrl}/api/v1/wallet/balances`, {
+    headers: { cookie }
+  });
+  assert.equal(walletAfterLogout.status, 401);
 });
 
 test("authentication endpoints reject malformed and invalid credentials", async () => {
