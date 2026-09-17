@@ -5,7 +5,7 @@ import {
   approveWithdrawalAtomically,
   confirmDepositAtomically,
   creditDepositAtomically,
-  confirmWithdrawalAtomically,
+  confirmWithdrawalWithSettlementAtomically,
   failWithdrawalAtomically,
   requestWithdrawalAtomically,
   submitWithdrawalAtomically
@@ -34,6 +34,7 @@ integration("PostgreSQL wallet funding integration", () => {
     const withdrawalId = randomUUID();
     const depositAmount = "25.00";
     const withdrawalAmount = "10.00";
+    const settlementReference = `settlement:${withdrawalId}`;
 
     try {
       await client.pool.query(`INSERT INTO users (id, email, username) VALUES ($1, $2, $3)`, [userId, `${userId}@wallet.integration.test`, `wallet_${userId.replaceAll("-", "")}`]);
@@ -84,12 +85,12 @@ integration("PostgreSQL wallet funding integration", () => {
 
       const submitted = await submitWithdrawalAtomically(client.db, withdrawalId);
       expect(submitted.idempotent).toBe(false);
-      const confirmedWithdrawal = await confirmWithdrawalAtomically(client.db, withdrawalId);
+      const confirmedWithdrawal = await confirmWithdrawalWithSettlementAtomically(client.db, withdrawalId, settlementReference);
       expect(confirmedWithdrawal.idempotent).toBe(false);
-      const withdrawalRetry = await confirmWithdrawalAtomically(client.db, withdrawalId);
+      const withdrawalRetry = await confirmWithdrawalWithSettlementAtomically(client.db, withdrawalId, settlementReference);
       expect(withdrawalRetry).toEqual({ transactionId: confirmedWithdrawal.transactionId, idempotent: true });
-      const withdrawalStatus = await client.pool.query(`SELECT status FROM withdrawals WHERE id = $1`, [withdrawalId]);
-      expect(withdrawalStatus.rows[0].status).toBe("confirmed");
+      const withdrawalStatus = await client.pool.query(`SELECT status, external_reference FROM withdrawals WHERE id = $1`, [withdrawalId]);
+      expect(withdrawalStatus.rows[0]).toEqual({ status: "confirmed", external_reference: settlementReference });
       const finalBalances = await client.pool.query(`SELECT account_id, balance::text FROM ledger_balance_projections WHERE account_id = ANY($1::uuid[])`, [[pendingDepositId, availableId, lockedId, pendingWithdrawalId]]);
       const finalByAccount = new Map(finalBalances.rows.map((row) => [row.account_id, row.balance]));
       expect(finalByAccount.get(availableId)).toBe("15.000000000000000000");
@@ -98,7 +99,6 @@ integration("PostgreSQL wallet funding integration", () => {
     } finally {
       await client.pool.query(`DELETE FROM journal_entries WHERE transaction_id IN (SELECT id FROM journal_transactions WHERE reference_id IN ($1, $2))`, [depositId, withdrawalId]);
       await client.pool.query(`DELETE FROM journal_transactions WHERE reference_id IN ($1, $2)`, [depositId, withdrawalId]);
-      await client.pool.query(`DELETE FROM idempotency_keys WHERE key LIKE $1 OR key LIKE $2`, [`deposit:${depositId}:%`, `withdrawal:${withdrawalId}:%`]);
       await client.pool.query(`DELETE FROM deposits WHERE id = $1`, [depositId]);
       await client.pool.query(`DELETE FROM withdrawals WHERE id = $1`, [withdrawalId]);
       await client.pool.query(`DELETE FROM ledger_balance_projections WHERE account_id = ANY($1::uuid[])`, [[pendingDepositId, availableId, lockedId, pendingWithdrawalId]]);
@@ -136,7 +136,6 @@ integration("PostgreSQL wallet funding integration", () => {
     } finally {
       await client.pool.query(`DELETE FROM journal_entries WHERE transaction_id IN (SELECT id FROM journal_transactions WHERE reference_id = $1 OR reference_type = 'wallet_integration_seed')`, [withdrawalId]);
       await client.pool.query(`DELETE FROM journal_transactions WHERE reference_id = $1 OR idempotency_key = $2`, [withdrawalId, seedKey]);
-      await client.pool.query(`DELETE FROM idempotency_keys WHERE key LIKE $1 OR key = $2`, [`withdrawal:${withdrawalId}:%`, seedKey]);
       await client.pool.query(`DELETE FROM withdrawals WHERE id = $1`, [withdrawalId]);
       await client.pool.query(`DELETE FROM ledger_balance_projections WHERE account_id IN (SELECT id FROM ledger_accounts WHERE asset_id = $1)`, [assetId]);
       await client.pool.query(`DELETE FROM ledger_accounts WHERE asset_id = $1`, [assetId]);
