@@ -11,6 +11,7 @@ import {
 export * from "./deposit.js";
 export * from "./funding.js";
 export * from "./lifecycle.js";
+export * from "./manualDeposit.js";
 
 export type WalletBalance = {
   accountId: string;
