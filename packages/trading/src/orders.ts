@@ -67,8 +67,9 @@ export async function placeLimitOrder(
 
   return db.transaction(async (tx) => {
     // Serialize the same user's clientOrderId so concurrent retries converge
-    // to one order instead of racing through the unique constraint.
-    await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtext(${`${input.userId}:${input.clientOrderId}`}))`);
+    // to one order instead of racing through the unique constraint. Use the
+    // 64-bit PostgreSQL hash to keep collision risk materially below hashtext().
+    await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtextextended(${`${input.userId}:${input.clientOrderId}`}, 0))`);
 
     const existingRows = await tx
       .select({
