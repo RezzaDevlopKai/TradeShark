@@ -13,6 +13,14 @@ const databaseUrl = process.env.DATABASE_URL;
 const integration = databaseUrl ? describe : describe.skip;
 const client = databaseUrl ? createDatabase(databaseUrl) : null;
 
+function normalizeDecimal(value: string): string {
+  const normalized = value.trim();
+  const [wholePart, fractionPart = ""] = normalized.split(".");
+  const whole = (wholePart ?? "0").replace(/^0+(?=\d)/, "") || "0";
+  const fraction = fractionPart.replace(/0+$/, "");
+  return fraction ? `${whole}.${fraction}` : whole;
+}
+
 async function seedWithdrawal(amount: string) {
   if (!client) throw new Error("DATABASE_URL is required");
   const userId = randomUUID();
@@ -73,8 +81,8 @@ async function assertReconciled(seed: Awaited<ReturnType<typeof seedWithdrawal>>
   for (const accountId of [seed.availableId, seed.lockedId, seed.pendingId]) {
     const reconciliation = await reconcileLedgerBalance(client.db, accountId);
     expect(reconciliation.consistent).toBe(true);
-    expect(reconciliation.difference).toMatch(/^-?0(?:\.0+)?$/);
-    expect(reconciliation.projectedBalance).toBe(reconciliation.ledgerBalance);
+    expect(normalizeDecimal(reconciliation.difference)).toBe("0");
+    expect(normalizeDecimal(reconciliation.projectedBalance)).toBe(normalizeDecimal(reconciliation.ledgerBalance));
   }
 }
 
