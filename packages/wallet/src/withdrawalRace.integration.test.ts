@@ -72,7 +72,6 @@ async function cleanup(seed: Awaited<ReturnType<typeof seedWithdrawal>>) {
   if (!client) return;
   await client.pool.query(`DELETE FROM journal_entries WHERE transaction_id IN (SELECT id FROM journal_transactions WHERE reference_id = $1 OR reference_type = 'wallet_withdrawal_race_seed')`, [seed.withdrawalId]);
   await client.pool.query(`DELETE FROM journal_transactions WHERE reference_id = $1 OR idempotency_key = $2`, [seed.withdrawalId, seed.seedKey]);
-  await client.pool.query(`DELETE FROM idempotency_keys WHERE key LIKE $1 OR key = $2`, [`withdrawal:${seed.withdrawalId}:%`, seed.seedKey]);
   await client.pool.query(`DELETE FROM withdrawals WHERE id = $1`, [seed.withdrawalId]);
   await client.pool.query(`DELETE FROM ledger_balance_projections WHERE account_id = ANY($1::uuid[])`, [[seed.availableId, seed.lockedId, seed.pendingId, seed.externalId]]);
   await client.pool.query(`DELETE FROM ledger_accounts WHERE asset_id = $1`, [seed.assetId]);
