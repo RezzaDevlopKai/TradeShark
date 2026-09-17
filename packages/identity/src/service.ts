@@ -244,5 +244,18 @@ function toPublicUser(user: typeof users.$inferSelect): PublicUser {
 }
 
 function isUniqueViolation(error: unknown): boolean {
-  return typeof error === "object" && error !== null && "code" in error && (error as { code?: unknown }).code === "23505";
+  let current: unknown = error;
+
+  for (let depth = 0; depth < 5; depth += 1) {
+    if (typeof current !== "object" || current === null) return false;
+
+    if ("code" in current && (current as { code?: unknown }).code === "23505") {
+      return true;
+    }
+
+    if (!("cause" in current)) return false;
+    current = (current as { cause?: unknown }).cause;
+  }
+
+  return false;
 }
