@@ -26,6 +26,11 @@ async function balance(id: string) {
   return result.rows[0]?.balance as string;
 }
 
+async function journalBalance(id: string) {
+  const result = await client!.pool.query(`SELECT COALESCE(SUM(CASE WHEN direction = 'credit' THEN amount ELSE -amount END), 0)::text AS balance FROM journal_entries WHERE account_id = $1`, [id]);
+  return result.rows[0]?.balance as string;
+}
+
 async function seed(accountId: string, treasuryId: string, amount: string, key: string) {
   await postJournal(client!.db, { transactionId: randomUUID(), idempotencyKey: key, referenceType: "execution_edge_seed", entries: [{ accountId: treasuryId, direction: "debit", amount }, { accountId, direction: "credit", amount }] });
 }
@@ -64,7 +69,7 @@ integration("PostgreSQL execution edge integration", () => {
       await client.pool.query(`INSERT INTO markets (id, symbol, base_asset_id, quote_asset_id, is_active) VALUES ($1, $2, $3, $4, true)`, [marketId, `STB/STQ-${marketId.slice(0, 6)}`, baseId, quoteId]);
       await createAccount(buyerQuoteAvailable, buyerId, quoteId, "USER_AVAILABLE"); await createAccount(buyerQuoteLocked, buyerId, quoteId, "USER_LOCKED"); await createAccount(buyerBaseAvailable, buyerId, baseId, "USER_AVAILABLE"); await createAccount(buyerBaseLocked, buyerId, baseId, "USER_LOCKED");
       await createAccount(sellerQuoteAvailable, sellerId, quoteId, "USER_AVAILABLE"); await createAccount(sellerQuoteLocked, sellerId, quoteId, "USER_LOCKED"); await createAccount(sellerBaseAvailable, sellerId, baseId, "USER_AVAILABLE"); await createAccount(sellerBaseLocked, sellerId, baseId, "USER_LOCKED");
-      await createAccount(quoteTreasury, null, quoteId, "TREASURY", false); await createAccount(baseTreasury, null, baseId, "TREASURY", false); await createAccount(feeRevenue, null, quoteId, "FEE_REVENUE", true);
+      await createAccount(quoteTreasury, null, quoteId, "TREASURY", false); await createAccount(baseTreasury, null, baseId, "TREASURY", false); await createAccount(feeRevenue, null, quoteId, "FEE_REVENUE", false);
       await seed(buyerQuoteAvailable, quoteTreasury, "50", quoteSeed); await seed(sellerBaseAvailable, baseTreasury, "2", baseSeed);
       const buy = await placeLimitOrder(client.db, { userId: buyerId, marketId, side: "buy", price: "12", quantity: "1", clientOrderId: `edge-buy-${buyerId}` });
       const sell = await placeLimitOrder(client.db, { userId: sellerId, marketId, side: "sell", price: "10", quantity: "1", clientOrderId: `edge-sell-${sellerId}` });
@@ -73,7 +78,7 @@ integration("PostgreSQL execution edge integration", () => {
       const execution = await executeLimitOrder(client.db, { orderId: sell.id });
       expect(execution.status).toBe("filled"); expect(execution.trades).toHaveLength(1);
       expect(execution.trades[0]?.price).toBe("12.000000000000000000"); expect(execution.trades[0]?.quantity).toBe("1.000000000000000000"); expect(execution.trades[0]?.feeAmount).toBe("0.066000000000000000"); expect(execution.trades[0]?.releasedQuoteAmount).toBe("0.000000000000000000");
-      expect(await balance(buyerQuoteLocked)).toBe("0.000000000000000000"); expect(await balance(buyerQuoteAvailable)).toBe("37.934000000000000000"); expect(await balance(buyerBaseAvailable)).toBe("1.000000000000000000"); expect(await balance(sellerBaseLocked)).toBe("0.000000000000000000"); expect(await balance(sellerQuoteAvailable)).toBe("12.000000000000000000"); expect(await balance(feeRevenue)).toBe("0.066000000000000000");
+      expect(await balance(buyerQuoteLocked)).toBe("0.000000000000000000"); expect(await balance(buyerQuoteAvailable)).toBe("37.934000000000000000"); expect(await balance(buyerBaseAvailable)).toBe("1.000000000000000000"); expect(await balance(sellerBaseLocked)).toBe("0.000000000000000000"); expect(await balance(sellerQuoteAvailable)).toBe("12.000000000000000000"); expect(await journalBalance(feeRevenue)).toBe("0.066000000000000000");
     } finally {
       await cleanup({ users: [buyerId, sellerId], assets: [baseId, quoteId], market: marketId, accounts: [buyerQuoteAvailable, buyerQuoteLocked, buyerBaseAvailable, buyerBaseLocked, sellerQuoteAvailable, sellerQuoteLocked, sellerBaseAvailable, sellerBaseLocked, quoteTreasury, baseTreasury, feeRevenue], orders: orderIds, seeds: [quoteSeed, baseSeed] });
     }
