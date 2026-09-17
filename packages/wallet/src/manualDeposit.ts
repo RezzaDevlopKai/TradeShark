@@ -21,9 +21,15 @@ type ManualDepositInput = {
 
 function assertPositiveDecimal(amount: string): string {
   const normalized = amount.trim();
-  if (!/^\d+(\.\d+)?$/.test(normalized) || Number(normalized) <= 0) {
+  const match = /^(\d+)(?:\.(\d+))?$/.exec(normalized);
+  if (!match) throw new Error(`Invalid positive decimal amount: ${amount}`);
+
+  const integerPart = match[1];
+  const fractionalPart = match[2] ?? "";
+  if (/^0+$/.test(integerPart) && /^0*$/.test(fractionalPart)) {
     throw new Error(`Invalid positive decimal amount: ${amount}`);
   }
+
   return normalized;
 }
 
