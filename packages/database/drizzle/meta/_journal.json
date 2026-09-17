@@ -43,6 +43,13 @@
       "when": 1789592405000,
       "tag": "0005_withdrawal_settlement_invariants",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1789592406000,
+      "tag": "0006_identity_authentication",
+      "breakpoints": true
     }
   ]
 }
