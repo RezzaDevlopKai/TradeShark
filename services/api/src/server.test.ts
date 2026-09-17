@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { spawn, type ChildProcess } from "node:child_process";
 import { once } from "node:events";
+import { randomUUID } from "node:crypto";
 import { test } from "node:test";
 
 const port = 3100 + Math.floor(Math.random() * 500);
@@ -50,4 +51,76 @@ test("unknown routes return a stable JSON error", async () => {
   const response = await fetch(`${baseUrl}/api/v1/unknown`);
   assert.equal(response.status, 404);
   assert.deepEqual(await response.json(), { error: "NOT_FOUND" });
+});
+
+test("authentication endpoints manage an HttpOnly session", async () => {
+  const id = randomUUID().replaceAll("-", "").slice(0, 12);
+  const email = `api-${id}@example.com`;
+  const username = `api_${id}`;
+  const password = "correct-horse-battery-staple";
+
+  const registration = await fetch(`${baseUrl}/api/v1/auth/register`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ email, username, password })
+  });
+  assert.equal(registration.status, 201);
+  const registrationBody = await registration.json() as {
+    user: { email: string; username: string };
+    expiresAt: string;
+  };
+  assert.deepEqual(registrationBody.user, { email, username });
+  assert.match(registration.headers.get("set-cookie") ?? "", /tradeshark_session=/);
+  assert.match(registration.headers.get("set-cookie") ?? "", /HttpOnly/);
+
+  const cookie = registration.headers.get("set-cookie")?.split(";", 1)[0];
+  assert.ok(cookie);
+
+  const session = await fetch(`${baseUrl}/api/v1/auth/session`, {
+    headers: { cookie }
+  });
+  assert.equal(session.status, 200);
+  assert.deepEqual(await session.json(), {
+    user: registrationBody.user,
+    expiresAt: registrationBody.expiresAt
+  });
+
+  const login = await fetch(`${baseUrl}/api/v1/auth/login`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ email: email.toUpperCase(), password })
+  });
+  assert.equal(login.status, 200);
+  assert.match(login.headers.get("set-cookie") ?? "", /tradeshark_session=/);
+
+  const logout = await fetch(`${baseUrl}/api/v1/auth/logout`, {
+    method: "POST",
+    headers: { cookie }
+  });
+  assert.equal(logout.status, 200);
+  assert.deepEqual(await logout.json(), { loggedOut: true });
+  assert.match(logout.headers.get("set-cookie") ?? "", /Max-Age=0/);
+
+  const afterLogout = await fetch(`${baseUrl}/api/v1/auth/session`, {
+    headers: { cookie }
+  });
+  assert.equal(afterLogout.status, 401);
+});
+
+test("authentication endpoints reject malformed and invalid credentials", async () => {
+  const malformed = await fetch(`${baseUrl}/api/v1/auth/login`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: "[]"
+  });
+  assert.equal(malformed.status, 400);
+  assert.deepEqual(await malformed.json(), { error: "INVALID_REQUEST" });
+
+  const invalidCredentials = await fetch(`${baseUrl}/api/v1/auth/login`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ email: "missing@example.com", password: "wrong-password" })
+  });
+  assert.equal(invalidCredentials.status, 401);
+  assert.deepEqual(await invalidCredentials.json(), { error: "Invalid email or password" });
 });
