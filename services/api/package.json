@@ -11,6 +11,7 @@
     "test": "tsx --test"
   },
   "dependencies": {
+    "@tradeshark/authorization": "workspace:*",
     "@tradeshark/database": "workspace:*",
     "@tradeshark/identity": "workspace:*"
   },
