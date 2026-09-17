@@ -9,7 +9,9 @@ function createMockDatabase(rows: unknown[]) {
     innerJoin: vi.fn(() => query),
     leftJoin: vi.fn(() => query),
     where: vi.fn(() => query),
-    limit
+    limit,
+    then: (resolve: (value: unknown) => unknown, reject?: (reason: unknown) => unknown) =>
+      Promise.resolve(rows).then(resolve, reject)
   };
 
   return query as never;
