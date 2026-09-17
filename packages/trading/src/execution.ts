@@ -2,10 +2,11 @@ import { createHash } from "node:crypto";
 import { and, asc, desc, eq, gt, gte, inArray, isNotNull, isNull, lte, ne, sql } from "drizzle-orm";
 import type { TradeSharkDatabase } from "@tradeshark/database";
 import { ledgerAccounts, markets, orders, trades } from "@tradeshark/database";
-import { calculateFee, matchLimitOrder, normalizeDecimal } from "./engine.js";
+import { matchLimitOrder, normalizeDecimal } from "./engine.js";
 import { settleTradeInTransaction } from "./settlement.js";
 
 const ZERO = "0.000000000000000000";
+const SCALE = 10n ** 18n;
 
 type ExecuteLimitOrderInput = { orderId: string };
 export type { ExecuteLimitOrderInput };
@@ -108,10 +109,10 @@ export async function executeLimitOrder(db: TradeSharkDatabase, input: ExecuteLi
         sellerLockedBaseAccountId: sellerAccounts.lockedBase.id, sellerAvailableQuoteAccountId: sellerAccounts.availableQuote.id, feeRevenueQuoteAccountId: feeAccount.id
       });
 
-      // Recompute the public execution fee from the exact matched economics.
-      // The settlement layer remains the ledger source of truth, while this
-      // value guarantees ExecutedTrade always exposes the fee to API callers.
-      const executionFeeAmount = calculateFee(matched.price, matched.quantity, matched.feeRate);
+      // Keep the public execution result and persisted trade fee explicit and
+      // deterministic. This uses the same 18-decimal arithmetic as the ledger,
+      // without relying on a cross-module fee helper at this boundary.
+      const executionFeeAmount = calculateExecutionFee(matched.price, matched.quantity, matched.feeRate);
       await tx.insert(trades).values({ id: matched.id, marketId: market.id, buyOrderId: matched.buyOrderId, sellOrderId: matched.sellOrderId, price: matched.price, quantity: matched.quantity, feeAmount: executionFeeAmount });
       executedTrades.push({ tradeId: matched.id, buyOrderId: matched.buyOrderId, sellOrderId: matched.sellOrderId, price: matched.price, quantity: matched.quantity, feeAmount: executionFeeAmount, releasedQuoteAmount: settlement.releasedQuoteAmount });
     }
@@ -125,6 +126,27 @@ export async function executeLimitOrder(db: TradeSharkDatabase, input: ExecuteLi
 
     return { orderId: taker.id, status: nextStatus, remainingQuantity: match.takerRemaining, trades: executedTrades, idempotent: false };
   });
+}
+
+function calculateExecutionFee(price: string, quantity: string, feeRate: string): string {
+  const priceScaled = decimalToScaled(price);
+  const quantityScaled = decimalToScaled(quantity);
+  const feeRateScaled = decimalToScaled(feeRate);
+  const grossQuote = (priceScaled * quantityScaled) / SCALE;
+  const fee = (grossQuote * feeRateScaled) / SCALE;
+  return scaledToDecimal(fee);
+}
+
+function decimalToScaled(value: string): bigint {
+  const [whole = "0", fraction = ""] = value.split(".");
+  if (!/^\d+$/.test(whole) || !/^\d{0,18}$/.test(fraction)) throw new Error(`Invalid normalized decimal: ${value}`);
+  return BigInt(whole) * SCALE + BigInt(fraction.padEnd(18, "0") || "0");
+}
+
+function scaledToDecimal(value: bigint): string {
+  const whole = value / SCALE;
+  const fraction = (value % SCALE).toString().padStart(18, "0");
+  return `${whole}.${fraction}`;
 }
 
 async function getUserAccounts(tx: TradeTransaction, userId: string, baseAssetId: string, quoteAssetId: string) {
