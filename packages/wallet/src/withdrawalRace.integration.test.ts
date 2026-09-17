@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { afterAll, describe, expect, it } from "vitest";
-import { createDatabase, postJournal } from "@tradeshark/database";
+import { createDatabase, postJournal, reconcileLedgerBalance } from "@tradeshark/database";
 import {
   approveWithdrawalAtomically,
   confirmWithdrawalAtomically,
@@ -68,6 +68,16 @@ async function seedWithdrawal(amount: string) {
   return { userId, assetId, availableId, lockedId, pendingId, externalId, withdrawalId, seedKey };
 }
 
+async function assertReconciled(seed: Awaited<ReturnType<typeof seedWithdrawal>>) {
+  if (!client) throw new Error("DATABASE_URL is required");
+  for (const accountId of [seed.availableId, seed.lockedId, seed.pendingId]) {
+    const reconciliation = await reconcileLedgerBalance(client.db, accountId);
+    expect(reconciliation.consistent).toBe(true);
+    expect(reconciliation.difference).toBe("0");
+    expect(reconciliation.projectedBalance).toBe(reconciliation.ledgerBalance);
+  }
+}
+
 async function cleanup(seed: Awaited<ReturnType<typeof seedWithdrawal>>) {
   if (!client) return;
   await client.pool.query(`DELETE FROM journal_entries WHERE transaction_id IN (SELECT id FROM journal_transactions WHERE reference_id = $1 OR reference_type = 'wallet_withdrawal_race_seed')`, [seed.withdrawalId]);
@@ -104,6 +114,7 @@ integration("PostgreSQL withdrawal lifecycle race integration", () => {
         expect(byAccount.get(seed.lockedId)).toBe("0.000000000000000000");
       }
       expect(byAccount.get(seed.pendingId)).toBe("0.000000000000000000");
+      await assertReconciled(seed);
     } finally { await cleanup(seed); }
   });
 
@@ -131,6 +142,7 @@ integration("PostgreSQL withdrawal lifecycle race integration", () => {
         expect(byAccount.get(seed.lockedId)).toBe("0.000000000000000000");
         expect(byAccount.get(seed.pendingId)).toBe("0.000000000000000000");
       }
+      await assertReconciled(seed);
     } finally { await cleanup(seed); }
   });
 
@@ -160,6 +172,7 @@ integration("PostgreSQL withdrawal lifecycle race integration", () => {
         expect(byAccount.get(seed.lockedId)).toBe("0.000000000000000000");
         expect(byAccount.get(seed.pendingId)).toBe("0.000000000000000000");
       }
+      await assertReconciled(seed);
     } finally { await cleanup(seed); }
   });
 });
