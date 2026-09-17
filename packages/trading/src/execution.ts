@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 import { and, asc, desc, eq, gt, gte, inArray, isNotNull, isNull, lte, ne, sql } from "drizzle-orm";
 import type { TradeSharkDatabase } from "@tradeshark/database";
 import { ledgerAccounts, markets, orders, trades } from "@tradeshark/database";
-import { matchLimitOrder, normalizeDecimal } from "./engine.js";
+import { calculateFee, matchLimitOrder, normalizeDecimal } from "./engine.js";
 import { settleTradeInTransaction } from "./settlement.js";
 
 const ZERO = "0.000000000000000000";
@@ -108,8 +108,12 @@ export async function executeLimitOrder(db: TradeSharkDatabase, input: ExecuteLi
         sellerLockedBaseAccountId: sellerAccounts.lockedBase.id, sellerAvailableQuoteAccountId: sellerAccounts.availableQuote.id, feeRevenueQuoteAccountId: feeAccount.id
       });
 
-      await tx.insert(trades).values({ id: matched.id, marketId: market.id, buyOrderId: matched.buyOrderId, sellOrderId: matched.sellOrderId, price: matched.price, quantity: matched.quantity, feeAmount: matched.feeAmount });
-      executedTrades.push({ tradeId: matched.id, buyOrderId: matched.buyOrderId, sellOrderId: matched.sellOrderId, price: matched.price, quantity: matched.quantity, feeAmount: matched.feeAmount, releasedQuoteAmount: settlement.releasedQuoteAmount });
+      // Recompute the public execution fee from the exact matched economics.
+      // The settlement layer remains the ledger source of truth, while this
+      // value guarantees ExecutedTrade always exposes the fee to API callers.
+      const executionFeeAmount = calculateFee(matched.price, matched.quantity, matched.feeRate);
+      await tx.insert(trades).values({ id: matched.id, marketId: market.id, buyOrderId: matched.buyOrderId, sellOrderId: matched.sellOrderId, price: matched.price, quantity: matched.quantity, feeAmount: executionFeeAmount });
+      executedTrades.push({ tradeId: matched.id, buyOrderId: matched.buyOrderId, sellOrderId: matched.sellOrderId, price: matched.price, quantity: matched.quantity, feeAmount: executionFeeAmount, releasedQuoteAmount: settlement.releasedQuoteAmount });
     }
 
     for (const maker of match.makerOrders) {
