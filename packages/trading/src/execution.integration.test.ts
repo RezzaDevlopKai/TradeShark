@@ -39,6 +39,11 @@ async function balance(accountId: string) {
   return result.rows[0]?.balance;
 }
 
+async function journalBalance(accountId: string) {
+  const result = await client!.pool.query(`SELECT COALESCE(SUM(CASE WHEN direction = 'credit' THEN amount ELSE -amount END), 0)::text AS balance FROM journal_entries WHERE account_id = $1`, [accountId]);
+  return result.rows[0]?.balance;
+}
+
 async function cleanup(input: { users: string[]; assets: string[]; market: string; accounts: string[]; orders: string[]; seeds: string[] }) {
   if (input.seeds.length) {
     await client!.pool.query(`DELETE FROM journal_entries WHERE transaction_id IN (SELECT id FROM journal_transactions WHERE idempotency_key = ANY($1::text[]))`, [input.seeds]);
@@ -84,7 +89,7 @@ describe("PostgreSQL persistent execution integration", () => {
       await account(sellerBaseLocked, sellerId, baseId, "USER_LOCKED");
       await account(quoteTreasury, null, quoteId, "TREASURY", false);
       await account(baseTreasury, null, baseId, "TREASURY", false);
-      await account(feeRevenue, null, quoteId, "FEE_REVENUE", true);
+      await account(feeRevenue, null, quoteId, "FEE_REVENUE", false);
       await seed(buyerQuoteAvailable, quoteTreasury, "100", quoteSeed);
       await seed(sellerBaseAvailable, baseTreasury, "5", baseSeed);
 
@@ -112,7 +117,7 @@ describe("PostgreSQL persistent execution integration", () => {
       expect(await balance(buyerBaseAvailable)).toBe("1.000000000000000000");
       expect(await balance(sellerBaseLocked)).toBe("0.000000000000000000");
       expect(await balance(sellerQuoteAvailable)).toBe("10.000000000000000000");
-      expect(await balance(feeRevenue)).toBe("0.055000000000000000");
+      expect(await journalBalance(feeRevenue)).toBe("0.055000000000000000");
 
       const replay = await executeLimitOrder(client.db, { orderId: buy.id });
       expect(replay.idempotent).toBe(true);
