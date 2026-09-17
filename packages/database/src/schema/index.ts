@@ -324,7 +324,43 @@ export const ledgerBalanceProjections = pgTable("ledger_balance_projections", {
   accountId: uuid("account_id").primaryKey().references(() => ledgerAccounts.id),
   balance: numeric("balance", { precision: 38, scale: 18 }).notNull().default("0"),
   version: integer("version").notNull().default(0),
-  ...timestamps
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow()
 }, (table) => ({
-  nonNegativeCheck: check("ledger_balance_nonnegative", sql`${table.balance} >= 0`)
+  balanceCheck: check("ledger_balance_nonnegative", sql`${table.balance} >= 0`)
 }));
+
+export const allTables = {
+  users,
+  identities,
+  assets,
+  markets,
+  ledgerAccounts,
+  journalTransactions,
+  journalEntries,
+  orders,
+  trades,
+  deposits,
+  withdrawals,
+  coinProjects,
+  coinCreationEntitlements,
+  coinCreationRedemptions,
+  unlockCampaigns,
+  shareIntents,
+  unlocks,
+  activityEvents,
+  auditEvents,
+  idempotencyKeys,
+  outboxEvents,
+  ledgerBalanceProjections
+};
+
+export type User = typeof users.$inferSelect;
+export type NewUser = typeof users.$inferInsert;
+export type LedgerAccount = typeof ledgerAccounts.$inferSelect;
+export type JournalTransaction = typeof journalTransactions.$inferSelect;
+export type JournalEntry = typeof journalEntries.$inferSelect;
+export type Order = typeof orders.$inferSelect;
+export type Trade = typeof trades.$inferSelect;
+export type Deposit = typeof deposits.$inferSelect;
+export type Withdrawal = typeof withdrawals.$inferSelect;
+export type CoinProject = typeof coinProjects.$inferSelect;
