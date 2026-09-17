@@ -4,6 +4,7 @@ import type { TradeSharkDatabase } from "@tradeshark/database";
 import {
   journalTransactions,
   ledgerAccounts,
+  ledgerBalanceProjections,
   postJournalInTransaction,
   withdrawals
 } from "@tradeshark/database";
@@ -34,10 +35,10 @@ export type WithdrawalSettlementResult = {
  * Finalizes a submitted withdrawal only when the caller supplies the external
  * settlement reference returned by the payment/network settlement system.
  *
- * The withdrawal row is locked for the duration of the transaction. This is
- * important because the ledger idempotency key is shared by all confirmation
- * retries: without row serialization, two concurrent callers with different
- * settlement references could both observe submitted before one commits.
+ * Ledger-moving withdrawal operations acquire the ledger projection lock before
+ * the withdrawal lifecycle row lock. We follow the same order here to prevent
+ * a confirmation-vs-failure deadlock: both paths serialize on the customer's
+ * pending-withdrawal projection before touching the withdrawal row.
  *
  * The reference, ledger movement, and lifecycle transition are committed in a
  * single database transaction. The database migration independently enforces
@@ -54,6 +55,29 @@ export async function confirmWithdrawalWithSettlementAtomically(
   }
 
   return db.transaction(async (tx) => {
+    const initialRows = await tx
+      .select({
+        id: withdrawals.id,
+        pendingAccountId: withdrawals.pendingAccountId
+      })
+      .from(withdrawals)
+      .where(eq(withdrawals.id, withdrawalId))
+      .limit(1);
+
+    const initialWithdrawal = initialRows[0];
+    if (!initialWithdrawal) throw new Error(`Withdrawal ${withdrawalId} was not found`);
+
+    const projectionRows = await tx
+      .select({ accountId: ledgerBalanceProjections.accountId })
+      .from(ledgerBalanceProjections)
+      .where(eq(ledgerBalanceProjections.accountId, initialWithdrawal.pendingAccountId))
+      .for("update")
+      .limit(1);
+
+    if (!projectionRows[0]) {
+      throw new Error("Withdrawal pending ledger balance projection does not exist");
+    }
+
     const rows = await tx
       .select({
         id: withdrawals.id,
