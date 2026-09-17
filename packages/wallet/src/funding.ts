@@ -5,6 +5,7 @@ import {
   deposits,
   journalTransactions,
   ledgerAccounts,
+  ledgerBalanceProjections,
   postJournalInTransaction,
   withdrawals
 } from "@tradeshark/database";
@@ -395,12 +396,40 @@ export async function confirmWithdrawalAtomically(
  * still held on the platform. For submitted withdrawals, the release comes
  * from USER_PENDING_WITHDRAWAL because the external settlement has not
  * completed successfully.
+ *
+ * Lock ordering is deliberately projection -> withdrawal row, matching the
+ * settlement path. This prevents a failure transaction from holding the
+ * withdrawal row while waiting on a customer balance projection that a
+ * concurrent settlement transaction already owns.
  */
 export async function failWithdrawalAtomically(
   db: TradeSharkDatabase,
   withdrawalId: string
 ): Promise<{ transactionId: string; idempotent: boolean }> {
   return db.transaction(async (tx) => {
+    const initialRows = await tx
+      .select({
+        id: withdrawals.id,
+        pendingAccountId: withdrawals.pendingAccountId
+      })
+      .from(withdrawals)
+      .where(eq(withdrawals.id, withdrawalId))
+      .limit(1);
+
+    const initialWithdrawal = initialRows[0];
+    if (!initialWithdrawal) throw new Error(`Withdrawal ${withdrawalId} was not found`);
+
+    const projectionRows = await tx
+      .select({ accountId: ledgerBalanceProjections.accountId })
+      .from(ledgerBalanceProjections)
+      .where(eq(ledgerBalanceProjections.accountId, initialWithdrawal.pendingAccountId))
+      .for("update")
+      .limit(1);
+
+    if (!projectionRows[0]) {
+      throw new Error("Withdrawal pending ledger balance projection does not exist");
+    }
+
     const rows = await tx
       .select({
         id: withdrawals.id,
@@ -412,6 +441,7 @@ export async function failWithdrawalAtomically(
       })
       .from(withdrawals)
       .where(eq(withdrawals.id, withdrawalId))
+      .for("update")
       .limit(1);
 
     const withdrawal = rows[0];
