@@ -4,17 +4,18 @@ import { defineConfig } from "vitest/config";
 /**
  * Resolve Node-style ESM .js specifiers to the sibling TypeScript source file.
  *
- * Using an absolute filesystem path avoids asking Vite to recursively resolve
- * the rewritten specifier. That keeps integration tests pinned to the exact
- * source module under test instead of allowing an alternate .js artifact or
- * package entrypoint to win resolution.
+ * Execution tests use one explicit source entrypoint so the public package
+ * entrypoint and the integration suites cannot accidentally resolve different
+ * execution implementations during Vitest's transform phase.
  */
 const localTsSpecifierResolver = {
   name: "tradeshark-local-ts-specifiers",
   enforce: "pre" as const,
   resolveId(source: string, importer?: string) {
     if (!importer || !source.startsWith("./") || !source.endsWith(".js")) return null;
-    return resolve(dirname(importer), `${source.slice(0, -3)}.ts`);
+    const sourcePath = source.slice(0, -3);
+    if (sourcePath === "./execution") return resolve(dirname(importer), "execution.test-entry.ts");
+    return resolve(dirname(importer), `${sourcePath}.ts`);
   }
 };
 
