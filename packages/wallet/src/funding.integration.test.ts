@@ -20,7 +20,7 @@ integration("PostgreSQL wallet funding integration", () => {
     await client?.pool.end();
   });
 
-  it("settles a deposit and keeps concurrent credit retries idempotent", async () => {
+  it("settles a deposit and keeps concurrent funding and approval retries idempotent", async () => {
     if (!client) throw new Error("DATABASE_URL is required");
 
     const userId = randomUUID();
@@ -70,10 +70,18 @@ integration("PostgreSQL wallet funding integration", () => {
       await client.pool.query(`INSERT INTO withdrawals (id, user_id, asset_id, pending_account_id, amount, status, destination) VALUES ($1, $2, $3, $4, $5, 'requested', $6)`, [withdrawalId, userId, assetId, pendingWithdrawalId, withdrawalAmount, "integration-destination"]);
       const locked = await requestWithdrawalAtomically(client.db, withdrawalId);
       expect(locked.idempotent).toBe(false);
-      const approved = await approveWithdrawalAtomically(client.db, withdrawalId);
-      expect(approved).toEqual({ status: "approved", idempotent: false });
-      const approvalRetry = await approveWithdrawalAtomically(client.db, withdrawalId);
-      expect(approvalRetry).toEqual({ status: "approved", idempotent: true });
+
+      const approvals = await Promise.all([
+        approveWithdrawalAtomically(client.db, withdrawalId),
+        approveWithdrawalAtomically(client.db, withdrawalId)
+      ]);
+      expect(approvals.filter((result) => !result.idempotent)).toHaveLength(1);
+      expect(approvals.filter((result) => result.idempotent)).toHaveLength(1);
+      expect(approvals).toEqual([
+        { status: "approved", idempotent: approvals[0].idempotent },
+        { status: "approved", idempotent: approvals[1].idempotent }
+      ]);
+
       const submitted = await submitWithdrawalAtomically(client.db, withdrawalId);
       expect(submitted.idempotent).toBe(false);
       const confirmedWithdrawal = await confirmWithdrawalAtomically(client.db, withdrawalId);
