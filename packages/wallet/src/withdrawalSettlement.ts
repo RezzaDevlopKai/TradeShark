@@ -34,6 +34,11 @@ export type WithdrawalSettlementResult = {
  * Finalizes a submitted withdrawal only when the caller supplies the external
  * settlement reference returned by the payment/network settlement system.
  *
+ * The withdrawal row is locked for the duration of the transaction. This is
+ * important because the ledger idempotency key is shared by all confirmation
+ * retries: without row serialization, two concurrent callers with different
+ * settlement references could both observe submitted before one commits.
+ *
  * The reference, ledger movement, and lifecycle transition are committed in a
  * single database transaction. The database migration independently enforces
  * that a confirmed withdrawal cannot exist without an external reference.
@@ -61,6 +66,7 @@ export async function confirmWithdrawalWithSettlementAtomically(
       })
       .from(withdrawals)
       .where(eq(withdrawals.id, withdrawalId))
+      .for("update")
       .limit(1);
 
     const withdrawal = rows[0];
@@ -129,7 +135,18 @@ export async function confirmWithdrawalWithSettlementAtomically(
       ]
     });
 
-    if (result.idempotent) return result;
+    if (result.idempotent) {
+      const currentRows = await tx
+        .select({ status: withdrawals.status, externalReference: withdrawals.externalReference })
+        .from(withdrawals)
+        .where(eq(withdrawals.id, withdrawal.id))
+        .limit(1);
+      const current = currentRows[0];
+      if (current?.status === "confirmed" && current.externalReference === normalizedReference) {
+        return { transactionId: result.transactionId, idempotent: true };
+      }
+      throw new Error("Withdrawal settlement journal exists without matching confirmed lifecycle state");
+    }
 
     const updated = await tx
       .update(withdrawals)
