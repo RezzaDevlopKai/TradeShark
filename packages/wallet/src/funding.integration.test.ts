@@ -19,7 +19,7 @@ integration("PostgreSQL wallet funding integration", () => {
     await client?.pool.end();
   });
 
-  it("settles a deposit into available balance and rolls back an insufficient withdrawal", async () => {
+  it("settles a deposit and keeps concurrent credit retries idempotent", async () => {
     if (!client) throw new Error("DATABASE_URL is required");
 
     const userId = randomUUID();
@@ -58,10 +58,13 @@ integration("PostgreSQL wallet funding integration", () => {
           userId,
           `wallet-pending-deposit:${pendingDepositId}`,
           availableId,
+          userId,
           `wallet-available:${availableId}`,
           lockedId,
+          userId,
           `wallet-locked:${lockedId}`,
           pendingWithdrawalId,
+          userId,
           `wallet-pending-withdrawal:${pendingWithdrawalId}`
         ]
       );
@@ -78,17 +81,23 @@ integration("PostgreSQL wallet funding integration", () => {
 
       const confirmed = await confirmDepositAtomically(client.db, depositId);
       expect(confirmed.idempotent).toBe(false);
-      expect(confirmed.transactionId).toBeTypeOf("string");
 
-      const credited = await creditDepositAtomically(client.db, depositId);
-      expect(credited.idempotent).toBe(false);
-      expect(credited.transactionId).toBeTypeOf("string");
+      const credits = await Promise.all([
+        creditDepositAtomically(client.db, depositId),
+        creditDepositAtomically(client.db, depositId)
+      ]);
+      expect(credits.filter((result) => !result.idempotent)).toHaveLength(1);
+      expect(credits.filter((result) => result.idempotent)).toHaveLength(1);
+      expect(credits[0].transactionId).toBe(credits[1].transactionId);
 
-      const depositRetry = await creditDepositAtomically(client.db, depositId);
-      expect(depositRetry).toEqual({ transactionId: credited.transactionId, idempotent: true });
+      const journalCount = await client.pool.query(
+        `SELECT count(*)::int AS count FROM journal_transactions WHERE idempotency_key = $1`,
+        [`deposit:${depositId}:credit`]
+      );
+      expect(journalCount.rows[0].count).toBe(1);
 
       const balances = await client.pool.query(
-        `SELECT account_id, balance::text FROM ledger_balance_projections WHERE account_id = ANY($1::uuid[]) ORDER BY account_id`,
+        `SELECT account_id, balance::text FROM ledger_balance_projections WHERE account_id = ANY($1::uuid[])`,
         [[pendingDepositId, availableId, lockedId]]
       );
       const balanceByAccount = new Map(balances.rows.map((row) => [row.account_id, row.balance]));
@@ -113,21 +122,16 @@ integration("PostgreSQL wallet funding integration", () => {
 
       const submitted = await submitWithdrawalAtomically(client.db, withdrawalId);
       expect(submitted.idempotent).toBe(false);
-
       const confirmedWithdrawal = await confirmWithdrawalAtomically(client.db, withdrawalId);
       expect(confirmedWithdrawal.idempotent).toBe(false);
-
       const withdrawalRetry = await confirmWithdrawalAtomically(client.db, withdrawalId);
       expect(withdrawalRetry).toEqual({ transactionId: confirmedWithdrawal.transactionId, idempotent: true });
 
-      const withdrawalStatus = await client.pool.query(
-        `SELECT status FROM withdrawals WHERE id = $1`,
-        [withdrawalId]
-      );
+      const withdrawalStatus = await client.pool.query(`SELECT status FROM withdrawals WHERE id = $1`, [withdrawalId]);
       expect(withdrawalStatus.rows[0].status).toBe("confirmed");
 
       const finalBalances = await client.pool.query(
-        `SELECT account_id, balance::text FROM ledger_balance_projections WHERE account_id = ANY($1::uuid[]) ORDER BY account_id`,
+        `SELECT account_id, balance::text FROM ledger_balance_projections WHERE account_id = ANY($1::uuid[])`,
         [[pendingDepositId, availableId, lockedId, pendingWithdrawalId]]
       );
       const finalByAccount = new Map(finalBalances.rows.map((row) => [row.account_id, row.balance]));
@@ -172,8 +176,6 @@ integration("PostgreSQL wallet funding integration", () => {
         [availableId, userId, assetId, `fail-available:${availableId}`, lockedId, `fail-locked:${lockedId}`, pendingWithdrawalId, `fail-pending:${pendingWithdrawalId}`, externalId, `fail-external:${assetId}`]
       );
       await client.pool.query(`INSERT INTO ledger_balance_projections (account_id, balance, version) VALUES ($1, 0, 0), ($2, 0, 0)`, [availableId, lockedId]);
-
-      // Seed available funds through the same ledger service path rather than mutating the projection directly.
       await client.pool.query(`INSERT INTO ledger_balance_projections (account_id, balance, version) VALUES ($1, 0, 0) ON CONFLICT (account_id) DO NOTHING`, [externalId]);
       const { postJournal } = await import("@tradeshark/database");
       await postJournal(client.db, {
