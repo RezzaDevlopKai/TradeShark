@@ -3,7 +3,7 @@ import { afterAll, describe, expect, it } from "vitest";
 import { createDatabase, postJournal, reconcileLedgerBalance } from "@tradeshark/database";
 import {
   approveWithdrawalAtomically,
-  confirmWithdrawalAtomically,
+  confirmWithdrawalWithSettlementAtomically,
   failWithdrawalAtomically,
   requestWithdrawalAtomically,
   submitWithdrawalAtomically
@@ -149,18 +149,24 @@ integration("PostgreSQL withdrawal lifecycle race integration", () => {
   it("serializes concurrent failure and confirmation from submitted without double settlement", async () => {
     if (!client) throw new Error("DATABASE_URL is required");
     const seed = await seedWithdrawal("11");
+    const settlementReference = `settlement:${seed.withdrawalId}`;
     try {
       await approveWithdrawalAtomically(client.db, seed.withdrawalId);
       await submitWithdrawalAtomically(client.db, seed.withdrawalId);
       const results = await Promise.allSettled([
         failWithdrawalAtomically(client.db, seed.withdrawalId),
-        confirmWithdrawalAtomically(client.db, seed.withdrawalId)
+        confirmWithdrawalWithSettlementAtomically(client.db, seed.withdrawalId, settlementReference)
       ]);
       expect(results.filter((r) => r.status === "fulfilled")).toHaveLength(1);
       expect(results.filter((r) => r.status === "rejected")).toHaveLength(1);
-      const state = await client.pool.query(`SELECT status FROM withdrawals WHERE id = $1`, [seed.withdrawalId]);
+      const state = await client.pool.query(`SELECT status, external_reference FROM withdrawals WHERE id = $1`, [seed.withdrawalId]);
       const status = state.rows[0].status;
       expect(["failed", "confirmed"]).toContain(status);
+      if (status === "confirmed") {
+        expect(state.rows[0].external_reference).toBe(settlementReference);
+      } else {
+        expect(state.rows[0].external_reference).toBeNull();
+      }
       const balances = await client.pool.query(`SELECT account_id, balance::text FROM ledger_balance_projections WHERE account_id = ANY($1::uuid[])`, [[seed.availableId, seed.lockedId, seed.pendingId]]);
       const byAccount = new Map(balances.rows.map((row) => [row.account_id, row.balance]));
       if (status === "failed") {
