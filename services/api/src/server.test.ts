@@ -57,7 +57,13 @@ test("unknown routes return a stable JSON error", async () => {
   assert.deepEqual(await response.json(), { error: "NOT_FOUND" });
 });
 
-test("authentication endpoints manage an HttpOnly session", async () => {
+test("protected account endpoint requires authentication", async () => {
+  const response = await fetch(`${baseUrl}/api/v1/account/me`);
+  assert.equal(response.status, 401);
+  assert.deepEqual(await response.json(), { error: "UNAUTHENTICATED" });
+});
+
+test("authentication endpoints manage an HttpOnly session and protected account access", async () => {
   const id = randomUUID().replaceAll("-", "").slice(0, 12);
   const email = `api-${id}@example.com`;
   const username = `api_${id}`;
@@ -102,6 +108,12 @@ test("authentication endpoints manage an HttpOnly session", async () => {
     expiresAt: registrationBody.expiresAt
   });
 
+  const account = await fetch(`${baseUrl}/api/v1/account/me`, {
+    headers: { cookie }
+  });
+  assert.equal(account.status, 200);
+  assert.deepEqual(await account.json(), { user: registrationBody.user });
+
   const login = await fetch(`${baseUrl}/api/v1/auth/login`, {
     method: "POST",
     headers: { "content-type": "application/json" },
@@ -122,6 +134,11 @@ test("authentication endpoints manage an HttpOnly session", async () => {
     headers: { cookie }
   });
   assert.equal(afterLogout.status, 401);
+
+  const protectedAfterLogout = await fetch(`${baseUrl}/api/v1/account/me`, {
+    headers: { cookie }
+  });
+  assert.equal(protectedAfterLogout.status, 401);
 });
 
 test("authentication endpoints reject malformed and invalid credentials", async () => {
