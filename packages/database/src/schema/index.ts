@@ -122,7 +122,7 @@ export const orders = pgTable("orders", {
   quantity: numeric("quantity", { precision: 38, scale: 18 }).notNull(),
   remainingQuantity: numeric("remaining_quantity", { precision: 38, scale: 18 }).notNull(),
   limitPrice: numeric("limit_price", { precision: 38, scale: 18 }),
-  feeRate: numeric("fee_rate", { precision: 20, scale: 10 }).notNull().default("0.0055"),
+  feeRate: numeric("fee_rate", { precision: 38, scale: 18 }).notNull().default("0.0055"),
   clientOrderId: text("client_order_id").notNull(),
   sequence: integer("sequence").notNull().default(sql`nextval('orders_sequence_seq')`),
   ...timestamps
@@ -260,7 +260,7 @@ export const unlocks = pgTable("unlocks", {
   campaignId: uuid("campaign_id").notNull().references(() => unlockCampaigns.id),
   shareIntentId: uuid("share_intent_id").notNull().references(() => shareIntents.id),
   rewardType: text("reward_type").notNull(),
-  claimedAt: timestamp("claimed_at" , { withTimezone: true }),
+  claimedAt: timestamp("claimed_at", { withTimezone: true }),
   ...timestamps
 }, (table) => ({
   oneUnlockPerUserCampaign: uniqueIndex("unlocks_user_campaign_uq").on(table.userId, table.campaignId)
@@ -324,43 +324,7 @@ export const ledgerBalanceProjections = pgTable("ledger_balance_projections", {
   accountId: uuid("account_id").primaryKey().references(() => ledgerAccounts.id),
   balance: numeric("balance", { precision: 38, scale: 18 }).notNull().default("0"),
   version: integer("version").notNull().default(0),
-  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow()
+  ...timestamps
 }, (table) => ({
-  balanceCheck: check("ledger_balance_nonnegative", sql`${table.balance} >= 0`)
+  nonNegativeCheck: check("ledger_balance_nonnegative", sql`${table.balance} >= 0`)
 }));
-
-export const allTables = {
-  users,
-  identities,
-  assets,
-  markets,
-  ledgerAccounts,
-  journalTransactions,
-  journalEntries,
-  orders,
-  trades,
-  deposits,
-  withdrawals,
-  coinProjects,
-  coinCreationEntitlements,
-  coinCreationRedemptions,
-  unlockCampaigns,
-  shareIntents,
-  unlocks,
-  activityEvents,
-  auditEvents,
-  idempotencyKeys,
-  outboxEvents,
-  ledgerBalanceProjections
-};
-
-export type User = typeof users.$inferSelect;
-export type NewUser = typeof users.$inferInsert;
-export type LedgerAccount = typeof ledgerAccounts.$inferSelect;
-export type JournalTransaction = typeof journalTransactions.$inferSelect;
-export type JournalEntry = typeof journalEntries.$inferSelect;
-export type Order = typeof orders.$inferSelect;
-export type Trade = typeof trades.$inferSelect;
-export type Deposit = typeof deposits.$inferSelect;
-export type Withdrawal = typeof withdrawals.$inferSelect;
-export type CoinProject = typeof coinProjects.$inferSelect;
