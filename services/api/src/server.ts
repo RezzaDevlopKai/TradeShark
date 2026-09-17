@@ -1,7 +1,8 @@
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { pathToFileURL } from "node:url";
+import { and, eq } from "drizzle-orm";
 import { authorize } from "@tradeshark/authorization";
-import { assets, createDatabase, eq, ledgerAccounts, ledgerBalanceProjections, and } from "@tradeshark/database";
+import { assets, createDatabase, ledgerAccounts, ledgerBalanceProjections } from "@tradeshark/database";
 import type { TradeSharkDatabase } from "@tradeshark/database";
 import { IdentityError, IdentityService } from "@tradeshark/identity";
 
@@ -142,11 +143,7 @@ export function createApiServer(identity: IdentityService | null, database: Trad
     );
 
     if (decision.allowed) return true;
-    if (decision.reason === "UNAUTHENTICATED") {
-      json(res, 401, { error: decision.reason });
-      return false;
-    }
-    json(res, 403, { error: decision.reason });
+    json(res, decision.reason === "UNAUTHENTICATED" ? 401 : 403, { error: decision.reason });
     return false;
   }
 
