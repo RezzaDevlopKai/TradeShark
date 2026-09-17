@@ -11,14 +11,20 @@ const client = databaseUrl ? createDatabase(databaseUrl) : null;
 async function user(id: string, prefix: string) { await client!.pool.query(`INSERT INTO users (id, email, username) VALUES ($1, $2, $3)`, [id, `${id}@execution.integration.test`, `${prefix}_${id.replaceAll("-", "")}`]); }
 async function asset(id: string, symbol: string) { await client!.pool.query(`INSERT INTO assets (id, symbol, name, decimals, is_active) VALUES ($1, $2, $3, 18, true)`, [id, `${symbol}${id.slice(0, 6).toUpperCase()}`, `${symbol} Execution Asset`]); }
 async function account(id: string, userId: string | null, assetId: string, type: string, projection = true) { await client!.pool.query(`INSERT INTO ledger_accounts (id, user_id, asset_id, account_type, code) VALUES ($1, $2, $3, $4, $5)`, [id, userId, assetId, type, `execution:${id}`]); if (projection) await client!.pool.query(`INSERT INTO ledger_balance_projections (account_id, balance, version) VALUES ($1, 0, 0)`, [id]); }
-async function seed(debitAccountId: string, creditAccountId: string, amount: string, key: string) { await postJournal(client!.db, { transactionId: randomUUID(), idempotencyKey: key, referenceType: "test_seed", referenceId: key, metadata: { key }, entries: [{ accountId: debitAccountId, direction: "debit", amount }, { accountId: creditAccountId, direction: "credit", amount }] }); }
+async function seed(debitAccountId: string, creditAccountId: string, amount: string, key: string) { await postJournal(client!.db, { transactionId: randomUUID(), idempotencyKey: key, referenceType: "test_seed", metadata: { key }, entries: [{ accountId: debitAccountId, direction: "debit", amount }, { accountId: creditAccountId, direction: "credit", amount }] }); }
 async function balance(accountId: string) { const result = await client!.pool.query(`SELECT balance::text AS balance FROM ledger_balance_projections WHERE account_id = $1`, [accountId]); return result.rows[0]?.balance; }
 async function cleanup(input: { users: string[]; assets: string[]; market: string; accounts: string[]; orders: string[]; seeds: string[] }) {
-  await client!.pool.query(`DELETE FROM ledger_journal_entries WHERE transaction_id IN (SELECT id FROM ledger_transactions WHERE idempotency_key = ANY($1::text[]))`, [input.seeds]);
-  await client!.pool.query(`DELETE FROM ledger_transactions WHERE idempotency_key = ANY($1::text[])`, [input.seeds]);
+  if (input.seeds.length) {
+    await client!.pool.query(`DELETE FROM journal_entries WHERE transaction_id IN (SELECT id FROM journal_transactions WHERE idempotency_key = ANY($1::text[]))`, [input.seeds]);
+    await client!.pool.query(`DELETE FROM journal_transactions WHERE idempotency_key = ANY($1::text[])`, [input.seeds]);
+  }
   if (input.orders.length) await client!.pool.query(`DELETE FROM trades WHERE buy_order_id = ANY($1::uuid[]) OR sell_order_id = ANY($1::uuid[])`, [input.orders]);
   if (input.orders.length) await client!.pool.query(`DELETE FROM orders WHERE id = ANY($1::uuid[])`, [input.orders]);
-  if (input.accounts.length) { await client!.pool.query(`DELETE FROM ledger_journal_entries WHERE account_id = ANY($1::uuid[])`, [input.accounts]); await client!.pool.query(`DELETE FROM ledger_balance_projections WHERE account_id = ANY($1::uuid[])`, [input.accounts]); await client!.pool.query(`DELETE FROM ledger_accounts WHERE id = ANY($1::uuid[])`, [input.accounts]); }
+  if (input.accounts.length) {
+    await client!.pool.query(`DELETE FROM journal_entries WHERE account_id = ANY($1::uuid[])`, [input.accounts]);
+    await client!.pool.query(`DELETE FROM ledger_balance_projections WHERE account_id = ANY($1::uuid[])`, [input.accounts]);
+    await client!.pool.query(`DELETE FROM ledger_accounts WHERE id = ANY($1::uuid[])`, [input.accounts]);
+  }
   await client!.pool.query(`DELETE FROM markets WHERE id = $1`, [input.market]);
   if (input.assets.length) await client!.pool.query(`DELETE FROM assets WHERE id = ANY($1::uuid[])`, [input.assets]);
   if (input.users.length) await client!.pool.query(`DELETE FROM users WHERE id = ANY($1::uuid[])`, [input.users]);
