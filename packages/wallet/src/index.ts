@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import { and, eq, inArray } from "drizzle-orm";
 import type { PostJournalInput, TradeSharkDatabase } from "@tradeshark/database";
 import {
+  assets,
   ledgerAccountType,
   ledgerAccounts,
   ledgerBalanceProjections,
@@ -30,8 +31,42 @@ export type WalletBalance = {
   balance: string;
 };
 
-const MOVABLE_ACCOUNT_TYPES = ["USER_AVAILABLE", "USER_LOCKED"] as const;
-type MovableAccountType = (typeof MOVABLE_ACCOUNT_TYPES)[number];
+export type UserWalletBalance = {
+  accountId: string;
+  assetId: string;
+  symbol: string;
+  name: string;
+  decimals: number;
+  balance: string;
+};
+
+export async function getUserBalances(
+  db: TradeSharkDatabase,
+  userId: string
+): Promise<UserWalletBalance[]> {
+  const rows = await db
+    .select({
+      accountId: ledgerAccounts.id,
+      assetId: assets.id,
+      symbol: assets.symbol,
+      name: assets.name,
+      decimals: assets.decimals,
+      balance: ledgerBalanceProjections.balance
+    })
+    .from(ledgerAccounts)
+    .innerJoin(assets, eq(assets.id, ledgerAccounts.assetId))
+    .leftJoin(ledgerBalanceProjections, eq(ledgerBalanceProjections.accountId, ledgerAccounts.id))
+    .where(and(eq(ledgerAccounts.userId, userId), eq(ledgerAccounts.accountType, "USER_AVAILABLE")));
+
+  return rows.map((row) => ({
+    accountId: row.accountId,
+    assetId: row.assetId,
+    symbol: row.symbol,
+    name: row.name,
+    decimals: row.decimals,
+    balance: row.balance ?? "0"
+  }));
+}
 
 export async function getUserAvailableBalance(
   db: TradeSharkDatabase,
@@ -73,8 +108,8 @@ export async function getUserAvailableBalance(
 export type MoveWalletBalanceInput = {
   userId: string;
   assetId: string;
-  from: MovableAccountType;
-  to: MovableAccountType;
+  from: "USER_AVAILABLE" | "USER_LOCKED";
+  to: "USER_AVAILABLE" | "USER_LOCKED";
   amount: string;
   idempotencyKey: string;
   referenceType: string;
@@ -106,14 +141,14 @@ export async function moveWalletBalance(
       and(
         eq(ledgerAccounts.userId, input.userId),
         eq(ledgerAccounts.assetId, input.assetId),
-        inArray(ledgerAccounts.accountType, MOVABLE_ACCOUNT_TYPES)
+        inArray(ledgerAccounts.accountType, ["USER_AVAILABLE", "USER_LOCKED"])
       )
     );
 
-  const accountByType = new Map<MovableAccountType, typeof accounts[number]>();
+  const accountByType = new Map<"USER_AVAILABLE" | "USER_LOCKED", typeof accounts[number]>();
   for (const account of accounts) {
-    if (MOVABLE_ACCOUNT_TYPES.includes(account.accountType as MovableAccountType)) {
-      accountByType.set(account.accountType as MovableAccountType, account);
+    if (account.accountType === "USER_AVAILABLE" || account.accountType === "USER_LOCKED") {
+      accountByType.set(account.accountType, account);
     }
   }
 
