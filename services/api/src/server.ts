@@ -1,7 +1,8 @@
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { pathToFileURL } from "node:url";
 import { authorize } from "@tradeshark/authorization";
-import { createDatabase } from "@tradeshark/database";
+import { assets, createDatabase, eq, ledgerAccounts, ledgerBalanceProjections, and } from "@tradeshark/database";
+import type { TradeSharkDatabase } from "@tradeshark/database";
 import { IdentityError, IdentityService } from "@tradeshark/identity";
 
 const MAX_JSON_BODY_BYTES = 32 * 1024;
@@ -17,7 +18,7 @@ type AuthenticatedIdentity = {
   user: NonNullable<Awaited<ReturnType<IdentityService["validateSession"]>>>["user"];
 };
 
-export function createApiServer(identity: IdentityService | null) {
+export function createApiServer(identity: IdentityService | null, database: TradeSharkDatabase | null = null) {
   const rateLimits = new Map<string, RateLimitBucket>();
 
   function json(res: ServerResponse, status: number, body: unknown, retryAfterSeconds?: number) {
@@ -145,10 +146,6 @@ export function createApiServer(identity: IdentityService | null) {
       json(res, 401, { error: decision.reason });
       return false;
     }
-    if (decision.reason === "RESOURCE_OWNERSHIP_REQUIRED") {
-      json(res, 403, { error: decision.reason });
-      return false;
-    }
     json(res, 403, { error: decision.reason });
     return false;
   }
@@ -264,6 +261,42 @@ export function createApiServer(identity: IdentityService | null) {
         return;
       }
 
+      if (req.method === "GET" && url.pathname === "/api/v1/wallet/balances") {
+        const session = await authenticate(req, res);
+        if (!session) return;
+        if (!requirePermission(res, session, "wallet:read", session.user.id)) return;
+        if (!database) {
+          json(res, 503, { error: "DATABASE_UNAVAILABLE" });
+          return;
+        }
+
+        const rows = await database
+          .select({
+            accountId: ledgerAccounts.id,
+            assetId: assets.id,
+            symbol: assets.symbol,
+            name: assets.name,
+            decimals: assets.decimals,
+            balance: ledgerBalanceProjections.balance
+          })
+          .from(ledgerAccounts)
+          .innerJoin(assets, eq(assets.id, ledgerAccounts.assetId))
+          .leftJoin(ledgerBalanceProjections, eq(ledgerBalanceProjections.accountId, ledgerAccounts.id))
+          .where(and(eq(ledgerAccounts.userId, session.user.id), eq(ledgerAccounts.accountType, "USER_AVAILABLE")));
+
+        json(res, 200, {
+          balances: rows.map((row) => ({
+            accountId: row.accountId,
+            assetId: row.assetId,
+            symbol: row.symbol,
+            name: row.name,
+            decimals: row.decimals,
+            balance: row.balance ?? "0"
+          }))
+        });
+        return;
+      }
+
       json(res, 404, { error: "NOT_FOUND" });
     } catch {
       if (!res.headersSent) json(res, 500, { error: "INTERNAL_SERVER_ERROR" });
@@ -278,7 +311,7 @@ export async function startApiServer() {
   const databaseUrl = process.env.DATABASE_URL;
   const database = databaseUrl ? createDatabase(databaseUrl) : null;
   const identity = database ? new IdentityService(database.db) : null;
-  const server = createApiServer(identity);
+  const server = createApiServer(identity, database?.db ?? null);
 
   server.on("close", () => {
     void database?.pool.end();
