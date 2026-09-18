@@ -108,3 +108,6 @@ jobs:
 
       - name: Run API wallet integration tests
         run: pnpm --filter @tradeshark/api test -- src/wallet.integration.test.ts
+
+      - name: Run API trading order integration tests
+        run: pnpm --filter @tradeshark/api test -- src/orders.integration.test.ts
