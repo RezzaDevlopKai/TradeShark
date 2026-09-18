@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
-import { after, describe, it } from "node:test";
+import { afterAll, describe, expect, it } from "vitest";
 import { createDatabase } from "@tradeshark/database";
 import { getOrderBook } from "./order-book.js";
 
@@ -26,9 +26,9 @@ integration("order book integration", () => {
       `INSERT INTO users (id, email, username) VALUES
         ($1, $2, $3), ($4, $5, $6), ($7, $8, $9)`,
       [
-        userIds[0], `book-${userIds[0]}@example.test`, `book_${userIds[0].slice(0, 8)}`,
-        userIds[1], `book-${userIds[1]}@example.test`, `book_${userIds[1].slice(0, 8)}`,
-        userIds[2], `book-${userIds[2]}@example.test`, `book_${userIds[2].slice(0, 8)}`
+        userIds[0]!, `book-${userIds[0]}@example.test`, `book_${userIds[0]!.slice(0, 8)}`,
+        userIds[1]!, `book-${userIds[1]}@example.test`, `book_${userIds[1]!.slice(0, 8)}`,
+        userIds[2]!, `book-${userIds[2]}@example.test`, `book_${userIds[2]!.slice(0, 8)}`
       ]
     );
     await database.pool.query(
@@ -50,16 +50,16 @@ integration("order book integration", () => {
         ($13, $6, $3, 'sell', 'open', '7', '5', '102', '0.0055', $14)`,
       [
         orderIds[0], userIds[0], marketId, `ob-${orderIds[0]}`,
-        orderIds[1], userIds[1], `ob-${orderIds[1]}`,
-        orderIds[2], userIds[2], `ob-${orderIds[2]}`,
+        orderIds[1], userIds[1]!, `ob-${orderIds[1]}`,
+        orderIds[2], userIds[2]!, `ob-${orderIds[2]}`,
         orderIds[3], `ob-${orderIds[3]}`,
         orderIds[4], `ob-${orderIds[4]}`
       ]
     );
 
     try {
-      const book = await getOrderBook(database, marketId, 25);
-      assert.deepEqual(book, {
+      const book = await getOrderBook(database.db, marketId, 25);
+      expect(book).toEqual({
         marketId,
         bids: [
           { price: "100", quantity: "7", orderCount: 2 },
@@ -71,11 +71,11 @@ integration("order book integration", () => {
         ]
       });
 
-      const shallow = await getOrderBook(database, marketId, 1);
-      assert.equal(shallow.bids.length, 1);
-      assert.equal(shallow.bids[0]?.price, "100");
-      assert.equal(shallow.asks.length, 1);
-      assert.equal(shallow.asks[0]?.price, "101");
+      const shallow = await getOrderBook(database.db, marketId, 1);
+      expect(shallow.bids).toHaveLength(1);
+      expect(shallow.bids[0]?.price).toBe("100");
+      expect(shallow.asks).toHaveLength(1);
+      expect(shallow.asks[0]?.price).toBe("101");
     } finally {
       await database.pool.query(`DELETE FROM orders WHERE id = ANY($1::uuid[])`, [orderIds]);
       await database.pool.query(`DELETE FROM markets WHERE id = $1`, [marketId]);
