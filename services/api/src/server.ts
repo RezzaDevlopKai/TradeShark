@@ -5,7 +5,7 @@ import { createDatabase } from "@tradeshark/database";
 import type { TradeSharkDatabase } from "@tradeshark/database";
 import { IdentityError, IdentityService } from "@tradeshark/identity";
 import { cancelLimitOrder, executeLimitOrder, getActiveMarkets, getOrderBook, getRecentMarketTrades, getUserOrders, getUserTrades, placeLimitOrder } from "@tradeshark/trading";
-import { createManualDepositRequest, createWithdrawalRequest, getUserBalances, getUserDeposits, getUserWithdrawals } from "@tradeshark/wallet";
+import { approveManualDeposit, createManualDepositRequest, createWithdrawalRequest, getAdminDeposits, getUserBalances, getUserDeposits, getUserWithdrawals, rejectManualDeposit } from "@tradeshark/wallet";
 
 const MAX_JSON_BODY_BYTES = 32 * 1024;
 const AUTH_RATE_LIMIT_WINDOW_MS = 5 * 60 * 1000;
@@ -256,6 +256,99 @@ export function createApiServer(identity: IdentityService | null, database: Trad
         if (!session) return;
         if (!requirePermission(res, session, "account:read", session.user.id)) return;
         json(res, 200, { user: session.user });
+        return;
+      }
+
+      if (url.pathname === "/api/v1/admin/deposits" || url.pathname.startsWith("/api/v1/admin/deposits/")) {
+        const session = await authenticate(req, res);
+        if (!session) return;
+        if (!database) {
+          json(res, 503, { error: "DATABASE_UNAVAILABLE" });
+          return;
+        }
+
+        if (req.method === "GET" && url.pathname === "/api/v1/admin/deposits") {
+          if (!requirePermission(res, session, "admin:read")) return;
+          const rawLimit = url.searchParams.get("limit");
+          const parsedLimit = rawLimit === null ? 50 : Number(rawLimit);
+          if (!Number.isInteger(parsedLimit) || parsedLimit < 1 || parsedLimit > 100) {
+            json(res, 400, { error: "INVALID_LIMIT" });
+            return;
+          }
+          const rawStatus = url.searchParams.get("status");
+          const allowedStatuses = ["pending", "confirmed", "credited", "failed", "reversed"] as const;
+          const status = rawStatus === null ? "pending" : rawStatus;
+          if (!allowedStatuses.includes(status as typeof allowedStatuses[number])) {
+            json(res, 400, { error: "INVALID_STATUS" });
+            return;
+          }
+          const deposits = await getAdminDeposits(database, status as typeof allowedStatuses[number], parsedLimit);
+          json(res, 200, { deposits });
+          return;
+        }
+
+        const prefix = "/api/v1/admin/deposits/";
+        const remainder = url.pathname.slice(prefix.length);
+        const parts = remainder.split("/").filter(Boolean);
+        if (parts.length !== 2 || !parts[0]) {
+          json(res, 404, { error: "NOT_FOUND" });
+          return;
+        }
+        const depositId = decodeURIComponent(parts[0]);
+        const action = parts[1];
+
+        if (req.method === "POST" && action === "approve") {
+          if (!requirePermission(res, session, "admin:write")) return;
+          const body = await readJson(req);
+          if (body && body.note !== undefined && typeof body.note !== "string") {
+            json(res, 400, { error: "INVALID_REQUEST" });
+            return;
+          }
+          try {
+            const result = await approveManualDeposit(database, depositId, session.user.id, body?.note as string | undefined);
+            json(res, result.idempotent ? 200 : 201, result);
+          } catch (error) {
+            if (error instanceof Error && (
+              error.message.includes("was not found") ||
+              error.message.includes("cannot be approved") ||
+              error.message.includes("ledger account does not exist") ||
+              error.message.includes("ledger account does not match") ||
+              error.message.includes("lifecycle changed")
+            )) {
+              json(res, 409, { error: error.message });
+              return;
+            }
+            json(res, 500, { error: "INTERNAL_SERVER_ERROR" });
+          }
+          return;
+        }
+
+        if (req.method === "POST" && action === "reject") {
+          if (!requirePermission(res, session, "admin:write")) return;
+          const body = await readJson(req);
+          if (!body || typeof body.reason !== "string" || !body.reason.trim()) {
+            json(res, 400, { error: "INVALID_REJECTION_REASON" });
+            return;
+          }
+          try {
+            const result = await rejectManualDeposit(database, depositId, session.user.id, body.reason);
+            json(res, 200, result);
+          } catch (error) {
+            if (error instanceof Error && (
+              error.message.includes("was not found") ||
+              error.message.includes("cannot be rejected") ||
+              error.message === "A rejection reason is required" ||
+              error.message.includes("lifecycle changed")
+            )) {
+              json(res, 409, { error: error.message });
+              return;
+            }
+            json(res, 500, { error: "INTERNAL_SERVER_ERROR" });
+          }
+          return;
+        }
+
+        json(res, 404, { error: "NOT_FOUND" });
         return;
       }
 
