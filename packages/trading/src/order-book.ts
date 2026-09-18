@@ -23,7 +23,7 @@ export async function getOrderBook(
     throw new Error("depth must be between 1 and 100");
   }
 
-  const rows = await db.execute(sql`
+  const result = await db.execute(sql`
     SELECT
       side,
       limit_price AS price,
@@ -39,6 +39,8 @@ export async function getOrderBook(
       CASE WHEN side = 'buy' THEN limit_price END DESC NULLS LAST,
       CASE WHEN side = 'sell' THEN limit_price END ASC NULLS LAST
   `);
+
+  const rows = (result as unknown as { rows: Array<Record<string, unknown>> }).rows;
 
   const bids: OrderBookLevel[] = [];
   const asks: OrderBookLevel[] = [];
