@@ -75,7 +75,7 @@ integration("PostgreSQL execution edge integration", () => {
       const sell = await placeLimitOrder(client.db, { userId: sellerId, marketId, side: "sell", price: "10", quantity: "1", clientOrderId: `edge-sell-${sellerId}` });
       orderIds.push(buy.id, sell.id);
       expect(await balance(buyerQuoteLocked)).toBe("12.066000000000000000"); expect(await balance(sellerBaseLocked)).toBe("1.000000000000000000");
-      const execution = await executeLimitOrder(client.db, { orderId: sell.id });
+      const execution = await executeLimitOrder(client.db, { orderId: sell.id, userId: sellerId });
       expect(execution.status).toBe("filled"); expect(execution.trades).toHaveLength(1);
       expect(execution.trades[0]?.price).toBe("12.000000000000000000"); expect(execution.trades[0]?.quantity).toBe("1.000000000000000000"); expect(execution.trades[0]?.feeAmount).toBe("0.066000000000000000"); expect(execution.trades[0]?.releasedQuoteAmount).toBe("0.000000000000000000");
       expect(await balance(buyerQuoteLocked)).toBe("0.000000000000000000"); expect(await balance(buyerQuoteAvailable)).toBe("37.934000000000000000"); expect(await balance(buyerBaseAvailable)).toBe("1.000000000000000000"); expect(await balance(sellerBaseLocked)).toBe("0.000000000000000000"); expect(await balance(sellerQuoteAvailable)).toBe("12.000000000000000000"); expect(await journalBalance(feeRevenue)).toBe("0.066000000000000000");
@@ -98,7 +98,7 @@ integration("PostgreSQL execution edge integration", () => {
       await createAccount(quoteTreasury, null, quoteId, "TREASURY", false); await createAccount(baseTreasury, null, baseId, "TREASURY", false);
       await seed(buyerQuoteAvailable, quoteTreasury, "25", quoteSeed);
       const buy = await placeLimitOrder(client.db, { userId: buyerId, marketId, side: "buy", price: "10", quantity: "2", clientOrderId: `edge-open-${buyerId}` });
-      orderIds.push(buy.id); const execution = await executeLimitOrder(client.db, { orderId: buy.id });
+      orderIds.push(buy.id); const execution = await executeLimitOrder(client.db, { orderId: buy.id, userId: buyerId });
       expect(execution.idempotent).toBe(false); expect(execution.status).toBe("open"); expect(execution.remainingQuantity).toBe("2.000000000000000000"); expect(execution.trades).toHaveLength(0);
       expect(await balance(buyerQuoteLocked)).toBe("20.110000000000000000"); expect(await balance(buyerQuoteAvailable)).toBe("4.890000000000000000");
       const cancelled = await cancelLimitOrder(client.db, { userId: buyerId, orderId: buy.id });
