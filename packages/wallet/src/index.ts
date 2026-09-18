@@ -20,6 +20,7 @@ export {
 export * from "./lifecycle.js";
 export * from "./manualDeposit.js";
 export * from "./withdrawalLifecycle.js";
+export * from "./withdrawalRequest.js";
 export {
   confirmWithdrawalWithSettlementAtomically as confirmWithdrawalAtomically,
   confirmWithdrawalWithSettlementAtomically
