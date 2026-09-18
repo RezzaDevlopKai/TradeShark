@@ -72,6 +72,7 @@ export async function createWithdrawalRequest(
 ): Promise<CreateWithdrawalRequestResult> {
   const amount = assertPositiveDecimal(input.amount);
   const destination = input.destination.trim();
+  if (Number(amount) < 10) throw new Error("Minimum USDT withdrawal is 10");
   if (!destination) throw new Error("Withdrawal destination is required");
   const idempotencyKey = normalizeIdempotencyKey(input.idempotencyKey);
   const requestHash = hashRequest({ userId: input.userId, assetId: input.assetId, amount, destination });
