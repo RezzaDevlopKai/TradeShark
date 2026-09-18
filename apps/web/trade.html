@@ -1,69 +1,38 @@
 <!doctype html>
 <html lang="en">
-  <head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <meta name="description" content="TradeShark futuristic trading terminal." />
-    <meta name="theme-color" content="#030b14" />
-    <link rel="stylesheet" href="./styles.css" />
-    <title>TradeShark Terminal — BTC / USD</title>
-  </head>
-  <body class="terminal-page">
-    <div class="shell">
-      <header class="nav terminal-nav">
-        <a class="brand" href="./" aria-label="TradeShark home"><span class="brand-mark">TS</span><span>TradeShark</span></a>
-        <nav aria-label="Primary navigation"><a href="./markets.html">Markets</a><a href="./intelligence.html">Intelligence</a><a href="./mayhem.html">Mayhem</a></nav>
-        <div class="nav-actions"><span class="system-status"><span class="status-dot"></span> TERMINAL READY</span><button class="ghost-button" type="button" data-action="future-mode">Future Mode</button></div>
-      </header>
-      <main class="trading-terminal" data-trading-terminal data-market-state="loading">
-        <section class="terminal-header">
-          <div><p class="eyebrow">TRADE TERMINAL / SPOT · <span data-market-state>CONNECTING</span></p><div class="pair-title"><span class="terminal-coin">₿</span><div><h1 data-market-symbol>BTC / USD</h1><p data-market-subtitle>Bitcoin · TradeShark Market</p></div></div></div>
-          <div class="price-block"><strong data-market-price>$104,821.42</strong><span class="up">LIVE</span><small>Market feed · server-backed</small></div>
-        </section>
-        <section class="terminal-layout">
-          <div class="terminal-main">
-            <article class="terminal-panel chart-panel">
-              <div class="panel-tabs"><button class="active" type="button">Chart</button><button type="button">Depth</button><button type="button">Market Info</button><span class="panel-spacer"></span><span>15m</span><span>1H</span><span>4H</span><span>1D</span></div>
-              <div class="chart-grid"><span>$106K</span><span>$105K</span><span>$104K</span><span>$103K</span><span>$102K</span>
-                <svg viewBox="0 0 900 360" preserveAspectRatio="none" aria-label="BTC USD chart preview">
-                  <defs><linearGradient id="chartFill" x1="0" x2="0" y1="0" y2="1"><stop offset="0" stop-color="currentColor" stop-opacity=".25"/><stop offset="1" stop-color="currentColor" stop-opacity="0"/></linearGradient></defs>
-                  <path d="M0 280 C45 270 60 220 100 240 S160 205 205 225 S260 170 300 195 S350 125 395 160 S450 105 490 145 S540 80 590 118 S640 155 685 100 S740 120 780 65 S840 82 900 28 L900 360 L0 360Z" fill="url(#chartFill)" />
-                  <path d="M0 280 C45 270 60 220 100 240 S160 205 205 225 S260 170 300 195 S350 125 395 160 S450 105 490 145 S540 80 590 118 S640 155 685 100 S740 120 780 65 S840 82 900 28" fill="none" stroke="currentColor" stroke-width="4" vector-effect="non-scaling-stroke" />
-                </svg>
-                <div class="chart-price" data-chart-price>$104,821.42</div>
-              </div>
-              <div class="volume-strip"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
-            </article>
-            <article class="terminal-panel order-book-panel">
-              <div class="panel-title"><div><b>Order Book</b><span>Server-backed market depth</span></div><span class="spread" data-market-spread>Spread —</span></div>
-              <div class="book-head"><span>Price (USD)</span><span>Amount (BTC)</span><span>Total (USD)</span></div>
-              <div data-order-asks><div class="book-row ask"><span>105,112.70</span><span>0.3189</span><span>33,514.42</span></div><div class="book-row ask"><span>105,044.22</span><span>0.2053</span><span>11,989.81</span></div><div class="book-row ask"><span>104,998.31</span><span>0.1142</span><span>11,989.81</span></div></div>
-              <div class="book-mid" data-chart-price>$104,821.42</div>
-              <div data-order-bids><div class="book-row bid"><span>104,779.24</span><span>0.4821</span><span>50,478.96</span></div><div class="book-row bid"><span>104,735.18</span><span>0.6234</span><span>65,278.62</span></div><div class="book-row bid"><span>104,701.90</span><span>1.2056</span><span>126,212.93</span></div></div>
-            </article>
-          </div>
-          <aside class="terminal-side">
-            <article class="terminal-panel order-form">
-              <div class="form-tabs"><button class="active" type="button">Spot</button><button type="button">Cross 5x</button><button type="button">Isolated 10x</button></div>
-              <div class="buy-sell"><button class="active" type="button">Buy</button><button type="button">Sell</button></div>
-              <div class="form-tabs compact"><button class="active" type="button">Limit</button><button type="button">Market</button><button type="button">Stop Limit</button></div>
-              <label>Available <span>0.00 USD</span></label>
-              <div class="input-shell"><span>Price</span><b>104821.42</b><small>USD</small></div><div class="input-shell"><span>Amount</span><b>0.0000</b><small>BTC</small></div>
-              <div class="range"><span></span><span></span><span></span><span></span><span></span></div><div class="range-labels"><span>0%</span><span>25%</span><span>50%</span><span>75%</span><span>100%</span></div>
-              <div class="input-shell total"><span>Total</span><b>0.00</b><small>USD</small></div>
-              <button class="terminal-cta" type="button" disabled>Connect account to trade</button><p class="guard-note">Execution remains server-authorized and ledger-backed.</p>
-            </article>
-            <article class="terminal-panel recent-panel">
-              <div class="panel-title"><div><b>Recent Trades</b><span>Latest executed market activity</span></div></div>
-              <div class="trade-head"><span>Price</span><span>Amount</span><span>Time</span></div>
-              <div data-recent-trades><div class="trade-row"><span>104,821.42</span><span>0.0123</span><span>12:45:32</span></div><div class="trade-row"><span>104,817.06</span><span>0.0456</span><span>12:45:31</span></div><div class="trade-row"><span>104,810.18</span><span>0.2301</span><span>12:45:30</span></div></div>
-            </article>
-          </aside>
-        </section>
-        <section class="terminal-markets"><div><p class="eyebrow">MARKET STRIP</p><h2>Stay ahead of the tape.</h2></div><a class="secondary-button" href="./markets.html">View all markets →</a></section>
-      </main>
-      <footer><span>© 2026 TradeShark</span><span>Preview UI · Live execution requires authenticated account state.</span></footer>
-    </div>
-    <script type="module" src="./app.js"></script>
-  </body>
-</html>
+<head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="description" content="TradeShark professional trading terminal."><link rel="stylesheet" href="./styles.css"><title>TradeShark Terminal</title>
+</head>
+<body class="terminal-page">
+<div class="shell">
+<header class="nav terminal-nav">
+<a class="brand" href="./"><span class="brand-mark">TS</span><span>TradeShark</span></a>
+<nav><a href="./markets.html">Markets</a><a href="./intelligence.html">Intelligence</a><a href="./mayhem.html">Mayhem</a></nav>
+<div class="nav-actions"><span class="system-status"><span class="status-dot"></span>MARKET LIVE</span><a class="ghost-button" href="./">Exit Terminal</a></div>
+</header>
+<main class="pro-terminal" data-trading-terminal data-market-state="loading">
+<section class="terminal-commandbar">
+<div><p class="eyebrow">TRADE / SPOT / <span data-market-state>CONNECTING</span></p><div class="pair-title"><span class="terminal-coin">₿</span><div><h1 data-market-symbol>BTC / USD</h1><p data-market-subtitle>Bitcoin · TradeShark Market</p></div></div></div>
+<div class="terminal-ticker"><small>LAST PRICE</small><strong data-market-price>$104,821.42</strong><span class="up">+2.84%</span><em>24H</em></div>
+<div class="terminal-actions"><button class="terminal-icon" type="button">⌁</button><button class="terminal-icon" type="button">☆</button><a class="primary-button" href="./">Connect</a></div>
+</section>
+<section class="terminal-toolbar"><div class="market-selector"><b>BTC / USD</b><span>⌄</span></div><div class="time-buttons"><button>1m</button><button>5m</button><button class="active">15m</button><button>1H</button><button>4H</button><button>1D</button></div><span class="toolbar-stat">VOL 24H <b>$2.41B</b></span><span class="toolbar-stat">HIGH <b>$106.2K</b></span><span class="toolbar-stat">LOW <b>$101.8K</b></span></section>
+<section class="terminal-grid">
+<div class="terminal-workspace">
+<article class="terminal-panel chart-panel">
+<div class="chart-head"><div class="chart-tabs"><button class="active">Chart</button><button>Depth</button><button>Trades</button><button>Info</button></div><div class="chart-tools"><span>▦</span><span>↗</span><span>⚙</span></div></div>
+<div class="pro-chart chart-grid"><span>$106K</span><span>$105K</span><span>$104K</span><span>$103K</span><span>$102K</span><svg viewBox="0 0 900 400" preserveAspectRatio="none"><defs><linearGradient id="terminalFill" x1="0" x2="0" y1="0" y2="1"><stop offset="0" stop-color="currentColor" stop-opacity=".25"/><stop offset="1" stop-color="currentColor" stop-opacity="0"/></linearGradient></defs><path d="M0 330 C40 315 55 270 95 292 S150 235 205 260 S250 195 305 224 S350 150 400 185 S450 105 500 150 S545 85 600 120 S650 205 700 145 S760 175 805 80 S855 105 900 30 L900 400 L0 400Z" fill="url(#terminalFill)"/><path d="M0 330 C40 315 55 270 95 292 S150 235 205 260 S250 195 305 224 S350 150 400 185 S450 105 500 150 S545 85 600 120 S650 205 700 145 S760 175 805 80 S855 105 900 30" fill="none" stroke="currentColor" stroke-width="3"/></svg><div class="chart-price" data-chart-price>$104,821.42</div></div>
+<div class="chart-footer"><span>TradingView-style workspace</span><span>DATA <b>SERVER-BACKED</b></span><span>UTC+7</span></div>
+</article>
+<article class="terminal-panel order-book-panel"><div class="panel-title"><div><b>Order Book</b><span>Live depth</span></div><span class="spread" data-market-spread>Spread —</span></div><div class="book-head"><span>Price (USD)</span><span>Amount</span><span>Total</span></div><div data-order-asks><div class="book-row ask"><span>105,112.70</span><span>0.3189</span><span>33,514.42</span></div><div class="book-row ask"><span>105,044.22</span><span>0.2053</span><span>21,555.19</span></div><div class="book-row ask"><span>104,998.31</span><span>0.1142</span><span>11,989.81</span></div></div><div class="book-mid" data-chart-price>$104,821.42 <small>≈ +2.84%</small></div><div data-order-bids><div class="book-row bid"><span>104,779.24</span><span>0.4821</span><span>50,478.96</span></div><div class="book-row bid"><span>104,735.18</span><span>0.6234</span><span>65,278.62</span></div><div class="book-row bid"><span>104,701.90</span><span>1.2056</span><span>126,212.93</span></div></div></article>
+</div>
+<aside class="terminal-side">
+<article class="terminal-panel order-form"><div class="form-tabs"><button class="active">Spot</button><button>Cross</button><button>Isolated</button></div><div class="buy-sell"><button class="active">Buy</button><button>Sell</button></div><div class="form-tabs compact"><button class="active">Limit</button><button>Market</button><button>Stop Limit</button></div><label>Available <span>0.00 USD</span></label><div class="input-shell"><span>Price</span><b>104821.42</b><small>USD</small></div><div class="input-shell"><span>Amount</span><b>0.0000</b><small>BTC</small></div><div class="range"><span></span><span></span><span></span><span></span><span></span></div><div class="range-labels"><span>0%</span><span>25%</span><span>50%</span><span>75%</span><span>100%</span></div><div class="input-shell total"><span>Total</span><b>0.00</b><small>USD</small></div><button class="terminal-cta" disabled>Connect account to trade</button><p class="guard-note">Orders are server-authorized and ledger-backed.</p></article>
+<article class="terminal-panel recent-panel"><div class="panel-title"><div><b>Recent Trades</b><span>Executed activity</span></div></div><div class="trade-head"><span>Price</span><span>Amount</span><span>Time</span></div><div data-recent-trades><div class="trade-row"><span>104,821.42</span><span>0.0123</span><span>12:45:32</span></div><div class="trade-row"><span>104,817.06</span><span>0.0456</span><span>12:45:31</span></div><div class="trade-row"><span>104,810.18</span><span>0.2301</span><span>12:45:30</span></div></div></article>
+</aside>
+</section>
+<section class="terminal-bottom"><div><p class="eyebrow">MARKETS</p><h2>Watch the next move.</h2></div><a class="secondary-button" href="./markets.html">Open market discovery →</a></section>
+</main>
+<footer><span>© 2026 TradeShark</span><span>Execution core · authenticated server state required</span></footer>
+</div><script type="module" src="./app.js"></script>
+</body></html>
