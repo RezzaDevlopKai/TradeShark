@@ -111,3 +111,6 @@ jobs:
 
       - name: Run API trading order integration tests
         run: pnpm --filter @tradeshark/api test -- src/orders.integration.test.ts
+
+      - name: Run API trading execution integration tests
+        run: pnpm --filter @tradeshark/api test -- src/execution.integration.test.ts
