@@ -68,7 +68,10 @@ integration("order book integration", () => {
         asks: [
           { price: "101", quantity: "2", orderCount: 1 },
           { price: "102", quantity: "5", orderCount: 1 }
-        ]
+        ],
+        bestBid: "100",
+        bestAsk: "101",
+        spread: "1"
       });
 
       const shallow = await getOrderBook(database.db, marketId, 1);
@@ -76,6 +79,9 @@ integration("order book integration", () => {
       expect(shallow.bids[0]?.price).toBe("100");
       expect(shallow.asks).toHaveLength(1);
       expect(shallow.asks[0]?.price).toBe("101");
+      expect(shallow.bestBid).toBe("100");
+      expect(shallow.bestAsk).toBe("101");
+      expect(shallow.spread).toBe("1");
     } finally {
       await database.pool.query(`DELETE FROM orders WHERE id = ANY($1::uuid[])`, [orderIds]);
       await database.pool.query(`DELETE FROM markets WHERE id = $1`, [marketId]);
