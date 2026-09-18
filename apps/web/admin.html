@@ -9,7 +9,22 @@
   <link rel="stylesheet" href="./styles.css">
 </head>
 <body class="admin-page">
-  <div class="admin-shell">
+  <section class="admin-auth-gate" id="admin-auth-gate">
+    <div class="admin-auth-card">
+      <div class="brand"><span class="brand-mark">TS</span><span>TradeShark</span></div>
+      <p class="eyebrow">SECURE CONTROL PLANE</p>
+      <h1>Admin access</h1>
+      <p>Sign in with an authorized TradeShark account. Financial controls stay behind the server-side permission gate.</p>
+      <form id="admin-login-form">
+        <label>Email<input id="admin-email" type="email" autocomplete="username" required placeholder="admin@tradeshark.local"></label>
+        <label>Password<input id="admin-password" type="password" autocomplete="current-password" required placeholder="••••••••"></label>
+        <button class="admin-primary" type="submit">Sign in to control center</button>
+        <p class="admin-note" id="admin-auth-message">API connection is required for live authentication.</p>
+      </form>
+      <a class="ghost-button" href="./index.html">← Back to TradeShark</a>
+    </div>
+  </section>
+  <div class="admin-shell" id="admin-shell" hidden>
     <aside class="admin-sidebar">
       <a class="brand" href="./index.html"><span class="brand-mark">TS</span><span>TradeShark</span></a>
       <div class="admin-kicker">CONTROL CENTER</div>
