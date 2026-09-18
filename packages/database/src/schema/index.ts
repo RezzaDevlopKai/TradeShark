@@ -22,6 +22,7 @@ const timestamps = {
 };
 
 export const userStatus = pgEnum("user_status", ["active", "suspended", "closed"]);
+export const accountRole = pgEnum("account_role", ["user", "support", "admin"]);
 export const entitlementStatus = pgEnum("entitlement_status", ["granted", "consumed", "revoked", "expired"]);
 export const shareState = pgEnum("share_state", ["started", "completed_by_user", "verified", "rejected", "expired"]);
 export const actorType = pgEnum("actor_type", ["user", "engine", "system", "admin"]);
@@ -42,6 +43,7 @@ export const users = pgTable("users", {
   email: text("email").notNull().unique(),
   username: text("username").notNull().unique(),
   status: userStatus("status").notNull().default("active"),
+  role: accountRole("role").notNull().default("user"),
   ...timestamps
 });
 
