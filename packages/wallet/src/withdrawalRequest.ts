@@ -2,11 +2,13 @@ import { createHash, randomUUID } from "node:crypto";
 import { and, eq, inArray } from "drizzle-orm";
 import type { TradeSharkDatabase } from "@tradeshark/database";
 import {
+  assets,
   idempotencyKeys,
   journalTransactions,
   ledgerAccounts,
   postJournalInTransaction,
-  withdrawals
+  withdrawals,
+  WITHDRAWAL_ASSET_SYMBOL
 } from "@tradeshark/database";
 
 const MIN_IDEMPOTENCY_KEY_LENGTH = 8;
@@ -76,6 +78,13 @@ export async function createWithdrawalRequest(
   const storageKey = `wallet:withdrawal:${input.userId}:${idempotencyKey}`;
 
   return db.transaction(async (tx) => {
+    const assetRows = await tx.select({ id: assets.id }).from(assets).where(and(
+      eq(assets.id, input.assetId),
+      eq(assets.symbol, WITHDRAWAL_ASSET_SYMBOL),
+      eq(assets.isActive, true)
+    )).limit(1);
+    if (!assetRows[0]) throw new Error("Withdrawals are supported only for active USDT");
+
     const existingRows = await tx.select({
       requestHash: idempotencyKeys.requestHash,
       responseBody: idempotencyKeys.responseBody
