@@ -47,6 +47,7 @@ function assertPositiveDecimal(amount: string): string {
 
 function assertMinimumWithdrawal(amount: string): void {
   const [wholePart, fractionPart = ""] = amount.split(".");
+  if (!wholePart) throw new Error(`Invalid positive decimal amount: ${amount}`);
   const scaled = BigInt(wholePart) * 10n ** 18n + BigInt(fractionPart.padEnd(18, "0"));
   if (scaled < MIN_WITHDRAWAL_USDT_SCALED) throw new Error("Minimum USDT withdrawal is 10");
 }
