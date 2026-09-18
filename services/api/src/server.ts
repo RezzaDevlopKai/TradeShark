@@ -4,7 +4,7 @@ import { authorize } from "@tradeshark/authorization";
 import { createDatabase } from "@tradeshark/database";
 import type { TradeSharkDatabase } from "@tradeshark/database";
 import { IdentityError, IdentityService } from "@tradeshark/identity";
-import { createManualDepositRequest, getUserBalances } from "@tradeshark/wallet";
+import { createManualDepositRequest, getUserBalances, getUserDeposits } from "@tradeshark/wallet";
 
 const MAX_JSON_BODY_BYTES = 32 * 1024;
 const AUTH_RATE_LIMIT_WINDOW_MS = 5 * 60 * 1000;
@@ -308,6 +308,27 @@ export function createApiServer(identity: IdentityService | null, database: Trad
           }
           json(res, 500, { error: "INTERNAL_SERVER_ERROR" });
         }
+        return;
+      }
+
+      if (req.method === "GET" && url.pathname === "/api/v1/wallet/deposits") {
+        const session = await authenticate(req, res);
+        if (!session) return;
+        if (!requirePermission(res, session, "wallet:read", session.user.id)) return;
+        if (!database) {
+          json(res, 503, { error: "DATABASE_UNAVAILABLE" });
+          return;
+        }
+
+        const rawLimit = url.searchParams.get("limit");
+        const parsedLimit = rawLimit === null ? 50 : Number(rawLimit);
+        if (!Number.isInteger(parsedLimit) || parsedLimit < 1 || parsedLimit > 100) {
+          json(res, 400, { error: "INVALID_LIMIT" });
+          return;
+        }
+
+        const deposits = await getUserDeposits(database, session.user.id, parsedLimit);
+        json(res, 200, { deposits });
         return;
       }
 
