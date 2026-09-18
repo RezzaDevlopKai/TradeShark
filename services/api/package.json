@@ -8,7 +8,7 @@
     "dev": "tsx src/server.ts",
     "start": "node dist/server.js",
     "typecheck": "tsc --noEmit",
-    "test": "tsx --test"
+    "test": "tsx --test --test-concurrency=1"
   },
   "dependencies": {
     "@tradeshark/authorization": "workspace:*",
