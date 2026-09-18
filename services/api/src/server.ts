@@ -4,7 +4,7 @@ import { authorize } from "@tradeshark/authorization";
 import { createDatabase } from "@tradeshark/database";
 import type { TradeSharkDatabase } from "@tradeshark/database";
 import { IdentityError, IdentityService } from "@tradeshark/identity";
-import { cancelLimitOrder, getUserOrders, placeLimitOrder } from "@tradeshark/trading";
+import { cancelLimitOrder, executeLimitOrder, getUserOrders, placeLimitOrder } from "@tradeshark/trading";
 import { createManualDepositRequest, createWithdrawalRequest, getUserBalances, getUserDeposits, getUserWithdrawals } from "@tradeshark/wallet";
 
 const MAX_JSON_BODY_BYTES = 32 * 1024;
@@ -469,6 +469,50 @@ export function createApiServer(identity: IdentityService | null, database: Trad
           }
           if (error instanceof Error && error.message.includes("Required USER_AVAILABLE")) {
             json(res, 409, { error: "WALLET_NOT_PROVISIONED" });
+            return;
+          }
+          json(res, 500, { error: "INTERNAL_SERVER_ERROR" });
+        }
+        return;
+      }
+
+      if (req.method === "POST" && url.pathname.startsWith("/api/v1/orders/") && url.pathname.endsWith("/execute")) {
+        const session = await authenticate(req, res);
+        if (!session) return;
+        if (!requirePermission(res, session, "orders:execute", session.user.id)) return;
+        if (!database) {
+          json(res, 503, { error: "DATABASE_UNAVAILABLE" });
+          return;
+        }
+
+        const orderId = decodeURIComponent(url.pathname.slice("/api/v1/orders/".length, -"/execute".length));
+        if (!orderId.trim()) {
+          json(res, 400, { error: "INVALID_ORDER_ID" });
+          return;
+        }
+
+        try {
+          const result = await executeLimitOrder(database, { orderId });
+          json(res, 200, result);
+        } catch (error) {
+          if (error instanceof Error && (
+            error.message === "orderId is required" ||
+            error.message === "Order does not exist" ||
+            error.message.startsWith("Order cannot be executed from status") ||
+            error.message === "Limit order price is required for execution"
+          )) {
+            json(res, 400, { error: error.message });
+            return;
+          }
+          if (error instanceof Error && error.message.includes("does not exist or is inactive")) {
+            json(res, 400, { error: error.message });
+            return;
+          }
+          if (error instanceof Error && (
+            error.message.startsWith("Missing USER_") ||
+            error.message === "Quote fee revenue account does not exist"
+          )) {
+            json(res, 409, { error: "TRADING_NOT_PROVISIONED" });
             return;
           }
           json(res, 500, { error: "INTERNAL_SERVER_ERROR" });
