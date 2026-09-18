@@ -124,3 +124,44 @@ try {
 }
 
 await loadTerminalMarket();
+async function loadMarketList() {
+  const list = document.querySelector("[data-market-list]");
+  if (!list) return;
+
+  const state = document.querySelector("[data-market-list-state]");
+  const controller = new AbortController();
+  const timeout = window.setTimeout(() => controller.abort(), 5000);
+
+  try {
+    const markets = await fetchMarkets(controller.signal);
+    if (!markets.length) throw new Error("No active markets available");
+    list.replaceChildren(...markets.slice(0, 12).map((market, index) => createMarketRow(market, index)));
+    if (state) state.textContent = `${markets.length} active markets · server-backed`;
+  } catch (error) {
+    if (state) state.textContent = "Market feed unavailable · preview";
+    console.warn("TradeShark market discovery unavailable.", error);
+  } finally {
+    window.clearTimeout(timeout);
+  }
+}
+
+function createMarketRow(market, index) {
+  const row = document.createElement("article");
+  row.className = "market-row";
+  const symbol = market.symbol.replace("-", " / ");
+  const base = market.baseAsset?.symbol ?? symbol.split(" / ")[0] ?? "TS";
+  const quote = market.quoteAsset?.symbol ?? symbol.split(" / ")[1] ?? "";
+  row.innerHTML = `
+    <span class="rank">${String(index + 1).padStart(2, "0")}</span>
+    <div class="coin-icon">${base.slice(0, 1)}</div>
+    <div class="coin-name"><b>${symbol}</b><small>${market.baseAsset?.name ?? base}</small></div>
+    <b>—</b><span>—</span>
+    <div class="mini-bars"><i></i><i></i><i></i><i></i><i></i></div>
+  `;
+  row.setAttribute("data-market-id", market.id);
+  row.title = `${symbol} · quote ${quote}`;
+  return row;
+}
+
+await loadMarketList();
+
