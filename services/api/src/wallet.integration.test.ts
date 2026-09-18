@@ -82,6 +82,7 @@ integration("API wallet integration", () => {
       await database.pool.query(`DELETE FROM users WHERE id = $1`, [userId]);
       await database.pool.query(`DELETE FROM assets WHERE id = $1`, [assetId]);
     }
+  });
 
   it("returns authenticated deposit history without exposing another user's deposits", async () => {
     if (!database) throw new Error("DATABASE_URL is required");
@@ -162,6 +163,5 @@ integration("API wallet integration", () => {
       await database.pool.query(`DELETE FROM users WHERE id = ANY($1::uuid[])`, [[userId, otherUserId]]);
       await database.pool.query(`DELETE FROM assets WHERE id = $1`, [assetId]);
     }
-  });
   });
 });
