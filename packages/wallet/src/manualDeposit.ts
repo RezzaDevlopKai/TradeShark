@@ -18,7 +18,7 @@ type ManualDepositInput = {
   assetId: string;
   amount: string;
   note?: string;
-  idempotencyKey: string;
+  idempotencyKey?: string;
 };
 
 function assertPositiveDecimal(amount: string): string {
@@ -66,11 +66,13 @@ export async function createManualDepositRequest(
   if (Number(amount) < Number(MIN_DEPOSIT_AMOUNT)) {
     throw new Error(`Minimum deposit amount is ${MIN_DEPOSIT_AMOUNT}`);
   }
-  const idempotencyKey = input.idempotencyKey.trim();
+  const idempotencyKey = input.idempotencyKey?.trim() ?? `legacy-${randomUUID()}`;
   if (!/^[A-Za-z0-9._:-]{8,128}$/.test(idempotencyKey)) {
     throw new Error("Invalid idempotency key");
   }
   const externalReference = `${MANUAL_REFERENCE_PREFIX}${idempotencyKey}`;
+
+  const depositId = randomUUID();
 
   await db.transaction(async (tx) => {
     const accountRows = await tx
