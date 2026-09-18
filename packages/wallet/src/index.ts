@@ -7,7 +7,8 @@ import {
   ledgerAccountType,
   ledgerAccounts,
   ledgerBalanceProjections,
-  postJournal
+  postJournal,
+  withdrawals
 } from "@tradeshark/database";
 
 export * from "./deposit.js";
