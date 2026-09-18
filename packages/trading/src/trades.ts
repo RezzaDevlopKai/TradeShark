@@ -1,6 +1,10 @@
 import { desc, eq, or } from "drizzle-orm";
 import type { TradeSharkDatabase } from "@tradeshark/database";
 import { orders, trades } from "@tradeshark/database";
+import { alias } from "drizzle-orm/pg-core";
+
+const buyOrders = alias(orders, "buy_orders");
+const sellOrders = alias(orders, "sell_orders");
 
 export type UserTrade = {
   id: string;
@@ -34,64 +38,25 @@ export async function getUserTrades(
       quantity: trades.quantity,
       feeAmount: trades.feeAmount,
       executedAt: trades.executedAt,
-      buyUserId: orders.userId,
+      buyUserId: buyOrders.userId,
+      sellUserId: sellOrders.userId
     })
     .from(trades)
-    .innerJoin(orders, eq(orders.id, trades.buyOrderId))
-    .where(or(eq(orders.userId, userId), eq(
-      orders.userId,
-      userId
-    )))
+    .innerJoin(buyOrders, eq(buyOrders.id, trades.buyOrderId))
+    .innerJoin(sellOrders, eq(sellOrders.id, trades.sellOrderId))
+    .where(or(eq(buyOrders.userId, userId), eq(sellOrders.userId, userId)))
     .orderBy(desc(trades.executedAt), desc(trades.id))
     .limit(limit);
 
-  const sellRows = await db
-    .select({
-      id: trades.id,
-      marketId: trades.marketId,
-      buyOrderId: trades.buyOrderId,
-      sellOrderId: trades.sellOrderId,
-      price: trades.price,
-      quantity: trades.quantity,
-      feeAmount: trades.feeAmount,
-      executedAt: trades.executedAt,
-      sellUserId: orders.userId,
-    })
-    .from(trades)
-    .innerJoin(orders, eq(orders.id, trades.sellOrderId))
-    .where(eq(orders.userId, userId))
-    .orderBy(desc(trades.executedAt), desc(trades.id))
-    .limit(limit);
-
-  const merged = new Map<string, UserTrade>();
-  for (const row of rows) {
-    merged.set(row.id, {
-      id: row.id,
-      marketId: row.marketId,
-      buyOrderId: row.buyOrderId,
-      sellOrderId: row.sellOrderId,
-      price: row.price,
-      quantity: row.quantity,
-      feeAmount: row.feeAmount,
-      executedAt: row.executedAt,
-      side: "buy"
-    });
-  }
-  for (const row of sellRows) {
-    merged.set(row.id, {
-      id: row.id,
-      marketId: row.marketId,
-      buyOrderId: row.buyOrderId,
-      sellOrderId: row.sellOrderId,
-      price: row.price,
-      quantity: row.quantity,
-      feeAmount: row.feeAmount,
-      executedAt: row.executedAt,
-      side: "sell"
-    });
-  }
-
-  return [...merged.values()]
-    .sort((a, b) => b.executedAt.getTime() - a.executedAt.getTime() || b.id.localeCompare(a.id))
-    .slice(0, limit);
+  return rows.map((row) => ({
+    id: row.id,
+    marketId: row.marketId,
+    buyOrderId: row.buyOrderId,
+    sellOrderId: row.sellOrderId,
+    price: row.price,
+    quantity: row.quantity,
+    feeAmount: row.feeAmount,
+    executedAt: row.executedAt,
+    side: row.buyUserId === userId ? "buy" : "sell"
+  }));
 }
