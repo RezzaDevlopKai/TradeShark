@@ -91,7 +91,7 @@ integration("PostgreSQL wallet balance read model integration", () => {
          WHERE transaction_id IN (
            SELECT id FROM journal_transactions WHERE reference_id = $1
          )
-         ORDER BY sequence`,
+         ORDER BY journal_transactions.created_at, journal_entries.sequence`,
         [depositId]
       );
       expect(ledger.rows).toEqual([
