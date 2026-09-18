@@ -119,7 +119,7 @@ describe("PostgreSQL persistent execution integration", () => {
       expect(await balance(sellerQuoteAvailable)).toBe("10.000000000000000000");
       expect(await journalBalance(feeRevenue)).toBe("0.055000000000000000");
 
-      const replay = await executeLimitOrder(client.db, { orderId: buy.id });
+      const replay = await executeLimitOrder(client.db, { orderId: buy.id, userId: buyerId });
       expect(replay.idempotent).toBe(true);
       expect(replay.trades).toHaveLength(0);
     } finally {
@@ -161,7 +161,7 @@ describe("PostgreSQL persistent execution integration", () => {
       orderIds.push(sell.id, buy.id);
       expect(await balance(buyerQuoteLocked)).toBe("24.132000000000000000");
 
-      const execution = await executeLimitOrder(client.db, { orderId: buy.id });
+      const execution = await executeLimitOrder(client.db, { orderId: buy.id, userId: buyerId });
       expect(execution.status).toBe("partially_filled");
       expect(execution.remainingQuantity).toBe("1.000000000000000000");
       expect(execution.trades).toHaveLength(1);
