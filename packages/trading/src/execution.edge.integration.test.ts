@@ -126,7 +126,7 @@ integration("PostgreSQL execution edge integration", () => {
       const sell = await placeLimitOrder(client.db, { userId: sellerId, marketId, side: "sell", price: "10", quantity: "1", clientOrderId: `edge-rollback-sell-${sellerId}` });
       const buy = await placeLimitOrder(client.db, { userId: buyerId, marketId, side: "buy", price: "10", quantity: "1", clientOrderId: `edge-rollback-buy-${buyerId}` });
       orderIds.push(sell.id, buy.id); await client.pool.query(`DELETE FROM ledger_accounts WHERE id = $1`, [feeRevenue]);
-      await expect(executeLimitOrder(client.db, { orderId: buy.id })).rejects.toThrow("Quote fee revenue account does not exist");
+      await expect(executeLimitOrder(client.db, { orderId: buy.id, userId: buyerId })).rejects.toThrow("Quote fee revenue account does not exist");
       const persisted = await client.pool.query(`SELECT status, remaining_quantity::text AS remaining_quantity FROM orders WHERE id = $1`, [buy.id]);
       const trades = await client.pool.query(`SELECT id FROM trades WHERE buy_order_id = $1 OR sell_order_id = $1`, [buy.id]);
       expect(persisted.rows[0]).toEqual({ status: "open", remaining_quantity: "1.000000000000000000" }); expect(trades.rows).toHaveLength(0); expect(await balance(buyerQuoteLocked)).toBe("10.055000000000000000"); expect(await balance(sellerBaseLocked)).toBe("1.000000000000000000");
