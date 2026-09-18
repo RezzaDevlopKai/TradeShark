@@ -1,8 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { afterAll, describe, expect, it } from "vitest";
 import { createDatabase } from "@tradeshark/database";
-import { confirmDepositAtomically, creditDepositAtomically } from "./index.js";
-import { getUserBalances } from "./index.js";
+import { confirmDepositAtomically, creditDepositAtomically, getUserBalances } from "./index.js";
 
 const databaseUrl = process.env.DATABASE_URL;
 const integration = databaseUrl ? describe : describe.skip;
@@ -87,11 +86,11 @@ integration("PostgreSQL wallet balance read model integration", () => {
       expect(balances[0]?.symbol).toBe(`B${assetId.slice(0, 4).toUpperCase()}`);
 
       const ledger = await client.pool.query(
-        `SELECT direction, amount::text FROM journal_entries
-         WHERE transaction_id IN (
-           SELECT id FROM journal_transactions WHERE reference_id = $1
-         )
-         ORDER BY journal_transactions.created_at, journal_entries.sequence`,
+        `SELECT je.direction, je.amount::text
+         FROM journal_entries je
+         INNER JOIN journal_transactions jt ON jt.id = je.transaction_id
+         WHERE jt.reference_id = $1
+         ORDER BY jt.created_at, je.sequence`,
         [depositId]
       );
       expect(ledger.rows).toEqual([
