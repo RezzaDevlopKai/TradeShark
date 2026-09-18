@@ -4,7 +4,7 @@ import { authorize } from "@tradeshark/authorization";
 import { createDatabase } from "@tradeshark/database";
 import type { TradeSharkDatabase } from "@tradeshark/database";
 import { IdentityError, IdentityService } from "@tradeshark/identity";
-import { createManualDepositRequest, getUserBalances, getUserDeposits } from "@tradeshark/wallet";
+import { createManualDepositRequest, createWithdrawalRequest, getUserBalances, getUserDeposits } from "@tradeshark/wallet";
 
 const MAX_JSON_BODY_BYTES = 32 * 1024;
 const AUTH_RATE_LIMIT_WINDOW_MS = 5 * 60 * 1000;
@@ -304,6 +304,63 @@ export function createApiServer(identity: IdentityService | null, database: Trad
           }
           if (error instanceof Error && error.message.includes("Idempotency key was already used")) {
             json(res, 409, { error: "IDEMPOTENCY_CONFLICT" });
+            return;
+          }
+          json(res, 500, { error: "INTERNAL_SERVER_ERROR" });
+        }
+        return;
+      }
+
+      if (req.method === "POST" && url.pathname === "/api/v1/wallet/withdrawals") {
+        const session = await authenticate(req, res);
+        if (!session) return;
+        if (!requirePermission(res, session, "wallet:withdraw", session.user.id)) return;
+        if (!database) {
+          json(res, 503, { error: "DATABASE_UNAVAILABLE" });
+          return;
+        }
+
+        const idempotencyKey = req.headers["idempotency-key"];
+        if (typeof idempotencyKey !== "string" || !/^[A-Za-z0-9._:-]{8,128}$/.test(idempotencyKey.trim())) {
+          json(res, 400, { error: "INVALID_IDEMPOTENCY_KEY" });
+          return;
+        }
+
+        const body = await readJson(req);
+        if (
+          !body ||
+          typeof body.assetId !== "string" ||
+          typeof body.amount !== "string" ||
+          typeof body.destination !== "string"
+        ) {
+          json(res, 400, { error: "INVALID_REQUEST" });
+          return;
+        }
+
+        try {
+          const result = await createWithdrawalRequest(database, {
+            userId: session.user.id,
+            assetId: body.assetId,
+            amount: body.amount,
+            destination: body.destination,
+            idempotencyKey: idempotencyKey.trim()
+          });
+          json(res, result.idempotent ? 200 : 201, result);
+        } catch (error) {
+          if (error instanceof Error && (
+            error.message.startsWith("Invalid positive decimal") ||
+            error.message === "Invalid idempotency key" ||
+            error.message === "Withdrawal destination is required"
+          )) {
+            json(res, 400, { error: error.message });
+            return;
+          }
+          if (error instanceof Error && error.message.includes("Idempotency key was already used")) {
+            json(res, 409, { error: "IDEMPOTENCY_CONFLICT" });
+            return;
+          }
+          if (error instanceof Error && error.message.includes("Required withdrawal ledger accounts")) {
+            json(res, 409, { error: "WALLET_NOT_PROVISIONED" });
             return;
           }
           json(res, 500, { error: "INTERNAL_SERVER_ERROR" });
