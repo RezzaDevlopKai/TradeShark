@@ -11,6 +11,7 @@ export const PERMISSIONS = [
   "orders:read",
   "orders:create",
   "orders:cancel",
+  "orders:execute",
   "trades:read",
   "coin:create",
   "admin:read",
@@ -39,6 +40,7 @@ export const DEFAULT_USER_PERMISSIONS: readonly Permission[] = [
   "orders:read",
   "orders:create",
   "orders:cancel",
+  "orders:execute",
   "trades:read",
   "coin:create"
 ];
