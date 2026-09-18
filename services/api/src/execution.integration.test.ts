@@ -89,8 +89,8 @@ integration("API trading execution integration", () => {
           ($10, $2, $8, 'USER_LOCKED', $11),
           ($12, $13, $8, 'USER_AVAILABLE', $14),
           ($15, $13, $8, 'USER_LOCKED', $16),
-          ($17, $13, $3, 'USER_AVAILABLE', $18),
-          ($19, $13, $3, 'USER_LOCKED', $20),
+          ($17, $13, $8, 'USER_AVAILABLE', $18),
+          ($19, $13, $8, 'USER_LOCKED', $20),
           ($21, NULL, $8, 'FEE_REVENUE', $22)`,
         [
           buyerQuoteAvailableId, buyerUserId, quoteAssetId, `exec-buyer-quote-available:${buyerQuoteAvailableId}`,
