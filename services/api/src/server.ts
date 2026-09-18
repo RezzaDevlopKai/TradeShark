@@ -261,7 +261,7 @@ export function createApiServer(identity: IdentityService | null, database: Trad
       if (req.method === "POST" && url.pathname === "/api/v1/wallet/deposits") {
         const session = await authenticate(req, res);
         if (!session) return;
-        if (!requirePermission(res, session, "wallet:read", session.user.id)) return;
+        if (!requirePermission(res, session, "wallet:deposit", session.user.id)) return;
         if (!database) {
           json(res, 503, { error: "DATABASE_UNAVAILABLE" });
           return;
