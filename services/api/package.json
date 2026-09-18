@@ -15,7 +15,8 @@
     "@tradeshark/database": "workspace:*",
     "@tradeshark/identity": "workspace:*",
     "@tradeshark/wallet": "workspace:*",
-    "drizzle-orm": "^0.44.7"
+    "drizzle-orm": "^0.44.7",
+    "@tradeshark/trading": "workspace:*"
   },
   "devDependencies": {
     "@types/node": "^22.18.0",
