@@ -82,5 +82,86 @@ integration("API wallet integration", () => {
       await database.pool.query(`DELETE FROM users WHERE id = $1`, [userId]);
       await database.pool.query(`DELETE FROM assets WHERE id = $1`, [assetId]);
     }
+
+  it("returns authenticated deposit history without exposing another user's deposits", async () => {
+    if (!database) throw new Error("DATABASE_URL is required");
+
+    const assetId = randomUUID();
+    const pendingId = randomUUID();
+    const otherPendingId = randomUUID();
+    const depositId = randomUUID();
+    const email = `${randomUUID()}@api.wallet.test`;
+    const username = `apiwallet_${randomUUID().replaceAll("-", "").slice(0, 20)}`;
+    const otherEmail = `${randomUUID()}@api.wallet.test`;
+    const otherUsername = `apiwallet_${randomUUID().replaceAll("-", "").slice(0, 20)}`;
+    const identity = new IdentityService(database.db);
+    const server = createApiServer(identity, database.db);
+
+    await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+    const address = server.address();
+    if (!address || typeof address === "string") throw new Error("API server did not expose a port");
+    const baseUrl = `http://127.0.0.1:${address.port}`;
+
+    let userId = "";
+    let otherUserId = "";
+    try {
+      const registration = await identity.register({
+        email,
+        username,
+        password: "correct-horse-battery-staple"
+      });
+      userId = registration.user.id;
+
+      const otherRegistration = await identity.register({
+        email: otherEmail,
+        username: otherUsername,
+        password: "correct-horse-battery-staple"
+      });
+      otherUserId = otherRegistration.user.id;
+
+      await database.pool.query(
+        `INSERT INTO assets (id, symbol, name, decimals, is_active) VALUES ($1, 'USD', 'US Dollar', 2, true)`,
+        [assetId]
+      );
+      await database.pool.query(
+        `INSERT INTO ledger_accounts (id, user_id, asset_id, account_type, code) VALUES
+          ($1, $2, $3, 'USER_PENDING_DEPOSIT', $4),
+          ($5, $6, $3, 'USER_PENDING_DEPOSIT', $7)`,
+        [pendingId, userId, assetId, `api-wallet-pending:${pendingId}`, otherPendingId, otherUserId, `api-wallet-pending:${otherPendingId}`]
+      );
+      await database.pool.query(
+        `INSERT INTO deposits (id, user_id, asset_id, pending_account_id, amount, status, external_reference, confirmation_count)
+         VALUES ($1, $2, $3, $4, '12.34', 'pending', $5, 2)`,
+        [depositId, userId, assetId, pendingId, `api-wallet-history:${depositId}`]
+      );
+
+      const response = await fetch(`${baseUrl}/api/v1/wallet/deposits?limit=10`, {
+        headers: { cookie: `tradeshark_session=${encodeURIComponent(registration.token)}` }
+      });
+      assert.equal(response.status, 200);
+      const body = await response.json() as { deposits: Array<Record<string, unknown>> };
+      assert.equal(body.deposits.length, 1);
+      assert.equal(body.deposits[0]?.id, depositId);
+      assert.equal(body.deposits[0]?.assetId, assetId);
+      assert.equal(body.deposits[0]?.amount, "12.34");
+      assert.equal(body.deposits[0]?.status, "pending");
+      assert.equal(body.deposits[0]?.confirmationCount, 2);
+      assert.equal(body.deposits[0]?.externalReference, `api-wallet-history:${depositId}`);
+
+      const otherResponse = await fetch(`${baseUrl}/api/v1/wallet/deposits`, {
+        headers: { cookie: `tradeshark_session=${encodeURIComponent(otherRegistration.token)}` }
+      });
+      assert.equal(otherResponse.status, 200);
+      assert.deepEqual(await otherResponse.json(), { deposits: [] });
+    } finally {
+      await new Promise<void>((resolve) => server.close(() => resolve()));
+      await database.pool.query(`DELETE FROM deposits WHERE id = $1`, [depositId]);
+      await database.pool.query(`DELETE FROM ledger_accounts WHERE id = ANY($1::uuid[])`, [[pendingId, otherPendingId]]);
+      await database.pool.query(`DELETE FROM auth_sessions WHERE user_id = ANY($1::uuid[])`, [[userId, otherUserId]]);
+      await database.pool.query(`DELETE FROM user_credentials WHERE user_id = ANY($1::uuid[])`, [[userId, otherUserId]]);
+      await database.pool.query(`DELETE FROM users WHERE id = ANY($1::uuid[])`, [[userId, otherUserId]]);
+      await database.pool.query(`DELETE FROM assets WHERE id = $1`, [assetId]);
+    }
+  });
   });
 });
