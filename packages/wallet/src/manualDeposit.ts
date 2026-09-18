@@ -93,6 +93,22 @@ export async function createManualDepositRequest(
   const depositId = randomUUID();
 
   await db.transaction(async (tx) => {
+    // Resolve idempotent replays before requiring the user's current ledger
+    // account. A previously-created request must remain replayable even if
+    // account provisioning or another concurrent operation is in progress.
+    const existingRows = await tx
+      .select({ id: deposits.id, userId: deposits.userId, assetId: deposits.assetId, amount: deposits.amount })
+      .from(deposits)
+      .where(eq(deposits.externalReference, externalReference))
+      .limit(1);
+    const existing = existingRows[0];
+    if (existing) {
+      if (existing.userId !== input.userId || existing.assetId !== input.assetId || existing.amount !== amount) {
+        throw new Error("Idempotency key was already used with a different deposit request");
+      }
+      return;
+    }
+
     const accountRows = await tx
       .select({
         id: ledgerAccounts.id,
@@ -113,19 +129,6 @@ export async function createManualDepositRequest(
     const pending = accountRows[0];
     if (!pending) {
       throw new Error("Required USER_PENDING_DEPOSIT ledger account does not exist");
-    }
-
-    const existingRows = await tx
-      .select({ id: deposits.id, userId: deposits.userId, assetId: deposits.assetId, amount: deposits.amount })
-      .from(deposits)
-      .where(eq(deposits.externalReference, externalReference))
-      .limit(1);
-    const existing = existingRows[0];
-    if (existing) {
-      if (existing.userId !== input.userId || existing.assetId !== input.assetId || existing.amount !== amount) {
-        throw new Error("Idempotency key was already used with a different deposit request");
-      }
-      return;
     }
 
     await tx.insert(deposits).values({
