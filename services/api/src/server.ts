@@ -4,7 +4,7 @@ import { authorize } from "@tradeshark/authorization";
 import { createDatabase } from "@tradeshark/database";
 import type { TradeSharkDatabase } from "@tradeshark/database";
 import { IdentityError, IdentityService } from "@tradeshark/identity";
-import { getUserBalances } from "@tradeshark/wallet";
+import { createManualDepositRequest, getUserBalances } from "@tradeshark/wallet";
 
 const MAX_JSON_BODY_BYTES = 32 * 1024;
 const AUTH_RATE_LIMIT_WINDOW_MS = 5 * 60 * 1000;
@@ -255,6 +255,59 @@ export function createApiServer(identity: IdentityService | null, database: Trad
         if (!session) return;
         if (!requirePermission(res, session, "account:read", session.user.id)) return;
         json(res, 200, { user: session.user });
+        return;
+      }
+
+      if (req.method === "POST" && url.pathname === "/api/v1/wallet/deposits") {
+        const session = await authenticate(req, res);
+        if (!session) return;
+        if (!requirePermission(res, session, "wallet:read", session.user.id)) return;
+        if (!database) {
+          json(res, 503, { error: "DATABASE_UNAVAILABLE" });
+          return;
+        }
+
+        const idempotencyKey = req.headers["idempotency-key"];
+        if (typeof idempotencyKey !== "string" || !/^[A-Za-z0-9._:-]{8,128}$/.test(idempotencyKey.trim())) {
+          json(res, 400, { error: "INVALID_IDEMPOTENCY_KEY" });
+          return;
+        }
+
+        const body = await readJson(req);
+        if (
+          !body ||
+          typeof body.assetId !== "string" ||
+          typeof body.amount !== "string" ||
+          (body.note !== undefined && typeof body.note !== "string")
+        ) {
+          json(res, 400, { error: "INVALID_REQUEST" });
+          return;
+        }
+
+        try {
+          const result = await createManualDepositRequest(database, {
+            userId: session.user.id,
+            assetId: body.assetId,
+            amount: body.amount,
+            ...(body.note === undefined ? {} : { note: body.note }),
+            idempotencyKey: idempotencyKey.trim()
+          });
+          json(res, 201, result);
+        } catch (error) {
+          if (error instanceof Error && (
+            error.message.startsWith("Minimum deposit amount") ||
+            error.message.startsWith("Invalid positive decimal") ||
+            error.message === "Invalid idempotency key"
+          )) {
+            json(res, 400, { error: error.message });
+            return;
+          }
+          if (error instanceof Error && error.message.includes("Idempotency key was already used")) {
+            json(res, 409, { error: "IDEMPOTENCY_CONFLICT" });
+            return;
+          }
+          json(res, 500, { error: "INTERNAL_SERVER_ERROR" });
+        }
         return;
       }
 
