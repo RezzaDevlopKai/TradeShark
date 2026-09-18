@@ -6,6 +6,13 @@ import { alias } from "drizzle-orm/pg-core";
 const buyOrders = alias(orders, "buy_orders");
 const sellOrders = alias(orders, "sell_orders");
 
+function normalizeDecimalString(value: string): string {
+  const [integerPart, fractionalPart] = value.split(".");
+  if (!fractionalPart) return integerPart ?? "0";
+  const trimmed = fractionalPart.replace(/0+$/, "");
+  return `${integerPart ?? "0"}${trimmed ? `.${trimmed}` : ""}`;
+}
+
 export type RecentMarketTrade = {
   id: string;
   marketId: string;
