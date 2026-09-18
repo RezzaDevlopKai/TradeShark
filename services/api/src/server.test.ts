@@ -260,3 +260,53 @@ test("authentication registration rate limiting returns Retry-After after repeat
     await stopTestServer(isolated.server);
   }
 });
+
+test("trade history endpoint requires authentication", async () => {
+  const response = await fetch(`${baseUrl}/api/v1/trades`);
+  assert.equal(response.status, 401);
+  assert.deepEqual(await response.json(), { error: "UNAUTHENTICATED" });
+});
+
+test("trade history endpoint validates the limit query parameter", async () => {
+  const id = randomUUID().replaceAll("-", "").slice(0, 12);
+  const email = `trades-limit-${id}@example.com`;
+  const username = `trades_limit_${id}`;
+  const registration = await fetch(`${baseUrl}/api/v1/auth/register`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ email, username, password: "correct-horse-battery-staple" })
+  });
+  assert.equal(registration.status, 201);
+  const cookie = registration.headers.get("set-cookie")?.split(";", 1)[0];
+  assert.ok(cookie);
+
+  for (const limit of ["0", "101", "1.5", "not-a-number"]) {
+    const response = await fetch(`${baseUrl}/api/v1/trades?limit=${encodeURIComponent(limit)}`, {
+      headers: { cookie }
+    });
+    assert.equal(response.status, 400);
+    assert.deepEqual(await response.json(), { error: "INVALID_LIMIT" });
+  }
+});
+
+test("trade history endpoint returns an empty list for an authenticated user", async () => {
+  const id = randomUUID().replaceAll("-", "").slice(0, 12);
+  const registration = await fetch(`${baseUrl}/api/v1/auth/register`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      email: `trades-empty-${id}@example.com`,
+      username: `trades_empty_${id}`,
+      password: "correct-horse-battery-staple"
+    })
+  });
+  assert.equal(registration.status, 201);
+  const cookie = registration.headers.get("set-cookie")?.split(";", 1)[0];
+  assert.ok(cookie);
+
+  const response = await fetch(`${baseUrl}/api/v1/trades?limit=25`, {
+    headers: { cookie }
+  });
+  assert.equal(response.status, 200);
+  assert.deepEqual(await response.json(), { trades: [] });
+});
