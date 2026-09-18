@@ -369,6 +369,27 @@ export function createApiServer(identity: IdentityService | null, database: Trad
         return;
       }
 
+      if (req.method === "GET" && url.pathname === "/api/v1/wallet/withdrawals") {
+        const session = await authenticate(req, res);
+        if (!session) return;
+        if (!requirePermission(res, session, "wallet:read", session.user.id)) return;
+        if (!database) {
+          json(res, 503, { error: "DATABASE_UNAVAILABLE" });
+          return;
+        }
+
+        const rawLimit = url.searchParams.get("limit");
+        const parsedLimit = rawLimit === null ? 50 : Number(rawLimit);
+        if (!Number.isInteger(parsedLimit) || parsedLimit < 1 || parsedLimit > 100) {
+          json(res, 400, { error: "INVALID_LIMIT" });
+          return;
+        }
+
+        const withdrawals = await getUserWithdrawals(database, session.user.id, parsedLimit);
+        json(res, 200, { withdrawals });
+        return;
+      }
+
       if (req.method === "GET" && url.pathname === "/api/v1/wallet/deposits") {
         const session = await authenticate(req, res);
         if (!session) return;
