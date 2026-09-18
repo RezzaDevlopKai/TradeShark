@@ -7,7 +7,7 @@ import { settleTradeInTransaction } from "./settlement.js";
 
 const ZERO = "0.000000000000000000";
 
-type ExecuteLimitOrderInput = { orderId: string };
+type ExecuteLimitOrderInput = { orderId: string; userId: string };
 export type { ExecuteLimitOrderInput };
 
 export type ExecutedTrade = {
@@ -32,6 +32,7 @@ type TradeTransaction = Parameters<TradeSharkDatabase["transaction"]>[0] extends
 
 export async function executeLimitOrder(db: TradeSharkDatabase, input: ExecuteLimitOrderInput): Promise<ExecuteLimitOrderResult> {
   if (!input.orderId.trim()) throw new Error("orderId is required");
+  if (!input.userId.trim()) throw new Error("userId is required");
 
   return db.transaction(async (tx) => {
     const initial = await tx.select({ marketId: orders.marketId }).from(orders).where(eq(orders.id, input.orderId)).limit(1);
@@ -48,6 +49,7 @@ export async function executeLimitOrder(db: TradeSharkDatabase, input: ExecuteLi
       .limit(1);
     const taker = takerRows[0];
     if (!taker) throw new Error("Order does not exist");
+    if (taker.userId !== input.userId) throw new Error("Order ownership is required");
 
     if (taker.status === "cancelled" || taker.status === "rejected") return { orderId: taker.id, status: taker.status, remainingQuantity: taker.remainingQuantity, trades: [], idempotent: true };
     if (taker.status === "filled" || taker.remainingQuantity === ZERO || taker.remainingQuantity === "0") return { orderId: taker.id, status: "filled", remainingQuantity: ZERO, trades: [], idempotent: true };
