@@ -14,7 +14,7 @@ export class IdentityError extends Error {
   }
 }
 
-export type PublicUser = Pick<typeof users.$inferSelect, "id" | "email" | "username" | "status" | "createdAt" | "updatedAt">;
+export type PublicUser = Pick<typeof users.$inferSelect, "id" | "email" | "username" | "status" | "role" | "createdAt" | "updatedAt">;
 
 export type SessionResult = {
   token: string;
@@ -238,6 +238,7 @@ function toPublicUser(user: typeof users.$inferSelect): PublicUser {
     email: user.email,
     username: user.username,
     status: user.status,
+    role: user.role,
     createdAt: user.createdAt,
     updatedAt: user.updatedAt
   };
