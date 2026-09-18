@@ -193,7 +193,13 @@ integration("API trading execution integration", () => {
       assert.equal(await balance(sellerBaseAvailableId), "0.000000000000000000");
       assert.equal(await balance(sellerBaseLockedId), "0.000000000000000000");
       assert.equal(await balance(sellerQuoteAvailableId), "198.000000000000000000");
-      assert.equal(await balance(feeAccountId), "1.089000000000000000");
+      const feeJournal = await database.pool.query(
+        `SELECT COALESCE(SUM(amount) FILTER (WHERE direction = 'credit'), 0) AS credit
+         FROM journal_entries
+         WHERE account_id = $1`,
+        [feeAccountId]
+      );
+      assert.equal(feeJournal.rows[0]?.credit, "1.089000000000000000");
 
       const sellerOrders = await fetch(`${baseUrl}/api/v1/orders`, {
         headers: { cookie: `tradeshark_session=${encodeURIComponent(seller.token)}` }
