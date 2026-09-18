@@ -4,7 +4,7 @@ import { authorize } from "@tradeshark/authorization";
 import { createDatabase } from "@tradeshark/database";
 import type { TradeSharkDatabase } from "@tradeshark/database";
 import { IdentityError, IdentityService } from "@tradeshark/identity";
-import { cancelLimitOrder, executeLimitOrder, getActiveMarkets, getOrderBook, getUserOrders, getUserTrades, placeLimitOrder } from "@tradeshark/trading";
+import { cancelLimitOrder, executeLimitOrder, getActiveMarkets, getOrderBook, getRecentMarketTrades, getUserOrders, getUserTrades, placeLimitOrder } from "@tradeshark/trading";
 import { createManualDepositRequest, createWithdrawalRequest, getUserBalances, getUserDeposits, getUserWithdrawals } from "@tradeshark/wallet";
 
 const MAX_JSON_BODY_BYTES = 32 * 1024;
@@ -554,6 +554,20 @@ export function createApiServer(identity: IdentityService | null, database: Trad
         return;
       }
 
+      if (req.method === "GET" && url.pathname.startsWith("/api/v1/markets/") && url.pathname.endsWith("/trades")) {
+        if (!database) { json(res, 503, { error: "DATABASE_UNAVAILABLE" }); return; }
+        const prefix = "/api/v1/markets/"; const suffix = "/trades";
+        const marketId = decodeURIComponent(url.pathname.slice(prefix.length, -suffix.length));
+        if (!marketId.trim()) { json(res, 400, { error: "INVALID_MARKET_ID" }); return; }
+        const rawLimit = url.searchParams.get("limit"); const parsedLimit = rawLimit === null ? 50 : Number(rawLimit);
+        if (!Number.isInteger(parsedLimit) || parsedLimit < 1 || parsedLimit > 100) { json(res, 400, { error: "INVALID_LIMIT" }); return; }
+        try { json(res, 200, { trades: await getRecentMarketTrades(database, marketId, parsedLimit) }); }
+        catch (error) {
+          if (error instanceof Error && (error.message === "marketId is required" || error.message === "limit must be between 1 and 100")) { json(res, 400, { error: error.message }); return; }
+          json(res, 500, { error: "INTERNAL_SERVER_ERROR" });
+        }
+        return;
+      }
       if (req.method === "GET" && url.pathname === "/api/v1/markets") {
         if (!database) {
           json(res, 503, { error: "DATABASE_UNAVAILABLE" });
