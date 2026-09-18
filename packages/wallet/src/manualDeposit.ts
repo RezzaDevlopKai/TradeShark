@@ -36,8 +36,8 @@ function assertPositiveDecimal(amount: string): string {
 }
 
 function compareDecimalAmounts(left: string, right: string): number {
-  const [leftInteger, leftFraction = ""] = left.split(".");
-  const [rightInteger, rightFraction = ""] = right.split(".");
+  const [leftInteger = "0", leftFraction = ""] = left.split(".");
+  const [rightInteger = "0", rightFraction = ""] = right.split(".");
   const normalizedLeftInteger = leftInteger.replace(/^0+(?=\d)/, "");
   const normalizedRightInteger = rightInteger.replace(/^0+(?=\d)/, "");
   if (normalizedLeftInteger.length !== normalizedRightInteger.length) {
