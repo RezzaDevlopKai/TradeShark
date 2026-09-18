@@ -11,12 +11,14 @@ import {
 } from "@tradeshark/database";
 
 const MANUAL_REFERENCE_PREFIX = "manual-deposit:";
+const MIN_DEPOSIT_AMOUNT = "2.5";
 
 type ManualDepositInput = {
   userId: string;
   assetId: string;
   amount: string;
   note?: string;
+  idempotencyKey: string;
 };
 
 function assertPositiveDecimal(amount: string): string {
@@ -61,8 +63,14 @@ export async function createManualDepositRequest(
   input: ManualDepositInput
 ): Promise<{ depositId: string; externalReference: string }> {
   const amount = assertPositiveDecimal(input.amount);
-  const depositId = randomUUID();
-  const externalReference = `${MANUAL_REFERENCE_PREFIX}${depositId}`;
+  if (Number(amount) < Number(MIN_DEPOSIT_AMOUNT)) {
+    throw new Error(`Minimum deposit amount is ${MIN_DEPOSIT_AMOUNT}`);
+  }
+  const idempotencyKey = input.idempotencyKey.trim();
+  if (!/^[A-Za-z0-9._:-]{8,128}$/.test(idempotencyKey)) {
+    throw new Error("Invalid idempotency key");
+  }
+  const externalReference = `${MANUAL_REFERENCE_PREFIX}${idempotencyKey}`;
 
   await db.transaction(async (tx) => {
     const accountRows = await tx
@@ -85,6 +93,19 @@ export async function createManualDepositRequest(
     const pending = accountRows[0];
     if (!pending) {
       throw new Error("Required USER_PENDING_DEPOSIT ledger account does not exist");
+    }
+
+    const existingRows = await tx
+      .select({ id: deposits.id, userId: deposits.userId, assetId: deposits.assetId, amount: deposits.amount })
+      .from(deposits)
+      .where(eq(deposits.externalReference, externalReference))
+      .limit(1);
+    const existing = existingRows[0];
+    if (existing) {
+      if (existing.userId !== input.userId || existing.assetId !== input.assetId || existing.amount !== amount) {
+        throw new Error("Idempotency key was already used with a different deposit request");
+      }
+      return;
     }
 
     await tx.insert(deposits).values({
@@ -129,7 +150,12 @@ export async function createManualDepositRequest(
     });
   });
 
-  return { depositId, externalReference };
+  const existingRows = await db
+    .select({ id: deposits.id })
+    .from(deposits)
+    .where(eq(deposits.externalReference, externalReference))
+    .limit(1);
+  return { depositId: existingRows[0]?.id ?? depositId, externalReference };
 }
 
 /**
