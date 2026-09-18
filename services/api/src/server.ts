@@ -350,7 +350,8 @@ export function createApiServer(identity: IdentityService | null, database: Trad
           if (error instanceof Error && (
             error.message.startsWith("Invalid positive decimal") ||
             error.message === "Invalid idempotency key" ||
-            error.message === "Withdrawal destination is required"
+            error.message === "Withdrawal destination is required" ||
+            error.message === "Withdrawals are supported only for active USDT"
           )) {
             json(res, 400, { error: error.message });
             return;
