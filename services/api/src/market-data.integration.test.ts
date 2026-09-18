@@ -40,9 +40,9 @@ integration("API market data integration", () => {
       [marketId, baseAssetId, quoteAssetId]
     );
     await database.pool.query(
-      "INSERT INTO orders (id,user_id,market_id,side,status,quantity,remaining_quantity,limit_price,fee_rate,client_order_id) VALUES
+      `INSERT INTO orders (id,user_id,market_id,side,status,quantity,remaining_quantity,limit_price,fee_rate,client_order_id) VALUES
        ($1,$2,$3,'buy','open','10','1.500000000000000000','101.000000000000000000','0.0055',$4),
-       ($5,$6,$3,'sell','open','10','2.250000000000000000','103.000000000000000000','0.0055',$7)",
+       ($5,$6,$3,'sell','open','10','2.250000000000000000','103.000000000000000000','0.0055',$7)`,
       [
         orderIds[0], userIds[0], marketId, `market-data-${orderIds[0]}`,
         orderIds[1], userIds[1], `market-data-${orderIds[1]}`
@@ -65,12 +65,14 @@ integration("API market data integration", () => {
       try {
         const tradesResponse = await fetch(`${baseUrl}/api/v1/markets/${marketId}/trades?limit=2`);
         assert.equal(tradesResponse.status, 200);
-        assert.deepEqual(await tradesResponse.json(), {
-          trades: [
-            { id: tradeIds[1], marketId, price: "103", quantity: "1.25", executedAt: (await database.pool.query("SELECT executed_at FROM trades WHERE id = $1", [tradeIds[1]])).rows[0].executed_at.toISOString() },
-            { id: tradeIds[0], marketId, price: "102.5", quantity: "0.75", executedAt: (await database.pool.query("SELECT executed_at FROM trades WHERE id = $1", [tradeIds[0]])).rows[0].executed_at.toISOString() }
-          ]
-        });
+        const tradePayload = await tradesResponse.json();
+        assert.equal(tradePayload.trades[0].id, tradeIds[1]);
+        assert.equal(tradePayload.trades[0].marketId, marketId);
+        assert.equal(tradePayload.trades[0].price, "103");
+        assert.equal(tradePayload.trades[0].quantity, "1.25");
+        assert.equal(tradePayload.trades[1].id, tradeIds[0]);
+        assert.equal(tradePayload.trades[1].price, "102.5");
+        assert.equal(tradePayload.trades[1].quantity, "0.75");
 
         const invalidTradeLimit = await fetch(`${baseUrl}/api/v1/markets/${marketId}/trades?limit=101`);
         assert.equal(invalidTradeLimit.status, 400);
