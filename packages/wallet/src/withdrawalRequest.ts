@@ -13,6 +13,7 @@ import {
 
 const MIN_IDEMPOTENCY_KEY_LENGTH = 8;
 const MAX_IDEMPOTENCY_KEY_LENGTH = 128;
+const MIN_WITHDRAWAL_USDT_SCALED = 10n * 10n ** 18n;
 
 export type CreateWithdrawalRequestInput = {
   userId: string;
@@ -44,6 +45,12 @@ function assertPositiveDecimal(amount: string): string {
   return normalized;
 }
 
+function assertMinimumWithdrawal(amount: string): void {
+  const [wholePart, fractionPart = ""] = amount.split(".");
+  const scaled = BigInt(wholePart) * 10n ** 18n + BigInt(fractionPart.padEnd(18, "0"));
+  if (scaled < MIN_WITHDRAWAL_USDT_SCALED) throw new Error("Minimum USDT withdrawal is 10");
+}
+
 function normalizeIdempotencyKey(value: string): string {
   const key = value.trim();
   if (key.length < MIN_IDEMPOTENCY_KEY_LENGTH || key.length > MAX_IDEMPOTENCY_KEY_LENGTH || !/^[A-Za-z0-9._:-]+$/.test(key)) {
@@ -72,7 +79,7 @@ export async function createWithdrawalRequest(
 ): Promise<CreateWithdrawalRequestResult> {
   const amount = assertPositiveDecimal(input.amount);
   const destination = input.destination.trim();
-  if (Number(amount) < 10) throw new Error("Minimum USDT withdrawal is 10");
+  assertMinimumWithdrawal(amount);
   if (!destination) throw new Error("Withdrawal destination is required");
   const idempotencyKey = normalizeIdempotencyKey(input.idempotencyKey);
   const requestHash = hashRequest({ userId: input.userId, assetId: input.assetId, amount, destination });
