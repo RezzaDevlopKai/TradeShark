@@ -26,7 +26,7 @@ export async function getOrderBook(
   const rows = await db.execute(sql`
     SELECT
       side,
-      price,
+      limit_price AS price,
       SUM(remaining_quantity)::numeric AS quantity,
       COUNT(*)::int AS order_count
     FROM orders
@@ -34,10 +34,10 @@ export async function getOrderBook(
       AND status IN ('open', 'partially_filled')
       AND remaining_quantity > 0
       AND limit_price IS NOT NULL
-    GROUP BY side, price
+    GROUP BY side, limit_price
     ORDER BY
-      CASE WHEN side = 'buy' THEN price END DESC NULLS LAST,
-      CASE WHEN side = 'sell' THEN price END ASC NULLS LAST
+      CASE WHEN side = 'buy' THEN limit_price END DESC NULLS LAST,
+      CASE WHEN side = 'sell' THEN limit_price END ASC NULLS LAST
   `);
 
   const bids: OrderBookLevel[] = [];
