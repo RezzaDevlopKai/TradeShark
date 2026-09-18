@@ -120,10 +120,10 @@ integration("API trading order integration", () => {
       assert.equal(order.marketId, marketId);
       assert.equal(order.side, "buy");
       assert.equal(order.status, "open");
-      assert.equal(order.quantity, "2");
-      assert.equal(order.remainingQuantity, "2");
-      assert.equal(order.limitPrice, "100");
-      assert.equal(order.feeRate, "0.0055");
+      assert.equal(order.quantity, "2.000000000000000000");
+      assert.equal(order.remainingQuantity, "2.000000000000000000");
+      assert.equal(order.limitPrice, "100.000000000000000000");
+      assert.equal(order.feeRate, "0.005500000000000000");
       assert.equal(order.clientOrderId, orderBody.clientOrderId);
       assert.equal(order.reservationAmount, "201.100000000000000000");
       assert.equal(order.reservationAssetId, quoteAssetId);
@@ -182,7 +182,7 @@ integration("API trading order integration", () => {
       };
       assert.equal(cancelled.id, orderId);
       assert.equal(cancelled.status, "cancelled");
-      assert.equal(cancelled.remainingQuantity, "2");
+      assert.equal(cancelled.remainingQuantity, "2.000000000000000000");
       assert.equal(cancelled.releasedAmount, "201.100000000000000000");
       assert.equal(cancelled.releasedAssetId, quoteAssetId);
       assert.equal(cancelled.idempotent, false);
