@@ -77,7 +77,7 @@ integration("API market catalog integration", () => {
       ]);
       assert.equal(body.markets.some((market) => market.id === inactiveMarketId), false);
 
-      const limited = await fetch(\`${baseUrl}/api/v1/markets?limit=1\`);
+      const limited = await fetch(`${baseUrl}/api/v1/markets?limit=1`);
       assert.equal(limited.status, 200);
       const limitedBody = await limited.json() as { markets: Array<Record<string, unknown>> };
       assert.equal(limitedBody.markets.length, 1);
