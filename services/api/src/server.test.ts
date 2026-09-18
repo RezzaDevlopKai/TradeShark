@@ -281,7 +281,7 @@ test("trade history endpoint validates the limit query parameter", async () => {
   assert.ok(cookie);
 
   for (const limit of ["0", "101", "1.5", "not-a-number"]) {
-    const response = await fetch(`${baseUrl}/api/v1/trades?limit=${encodeURIComponent(limit)}`, {
+    const response: Response = await fetch(`${baseUrl}/api/v1/trades?limit=${encodeURIComponent(limit)}`, {
       headers: { cookie }
     });
     assert.equal(response.status, 400);
