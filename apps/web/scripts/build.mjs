@@ -13,6 +13,7 @@ for (const name of [
   "intelligence.html",
   "mayhem.html",
   "trade.html",
+  "admin.html",
   "styles.css",
   "app.js",
   "api.js",
