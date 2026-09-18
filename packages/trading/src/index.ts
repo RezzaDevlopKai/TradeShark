@@ -17,3 +17,6 @@ export type { SettleTradeInput, SettleTradeResult } from "./settlement.js";
 export type { UserTrade } from "./trades.js";
 
 export { getActiveMarkets } from "./markets.js";
+
+export { getOrderBook } from "./order-book.js";
+export type { OrderBook, OrderBookLevel } from "./order-book.js";
