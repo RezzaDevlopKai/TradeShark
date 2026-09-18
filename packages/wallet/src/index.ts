@@ -21,6 +21,48 @@ export * from "./lifecycle.js";
 export * from "./manualDeposit.js";
 export * from "./withdrawalLifecycle.js";
 export * from "./withdrawalRequest.js";
+
+export type UserWithdrawal = {
+  id: string;
+  assetId: string;
+  symbol: string;
+  name: string;
+  amount: string;
+  status: "requested" | "pending" | "approved" | "submitted" | "confirmed" | "failed" | "reversed" | "cancelled";
+  destination: string;
+  externalReference: string | null;
+  submittedAt: Date | null;
+  confirmedAt: Date | null;
+  failureReason: string | null;
+  createdAt: Date;
+};
+
+export async function getUserWithdrawals(
+  db: TradeSharkDatabase,
+  userId: string,
+  limit = 50
+): Promise<UserWithdrawal[]> {
+  const safeLimit = Math.min(Math.max(Math.trunc(limit), 1), 100);
+  return db.select({
+    id: withdrawals.id,
+    assetId: assets.id,
+    symbol: assets.symbol,
+    name: assets.name,
+    amount: withdrawals.amount,
+    status: withdrawals.status,
+    destination: withdrawals.destination,
+    externalReference: withdrawals.externalReference,
+    submittedAt: withdrawals.submittedAt,
+    confirmedAt: withdrawals.confirmedAt,
+    failureReason: withdrawals.failureReason,
+    createdAt: withdrawals.createdAt
+  }).from(withdrawals)
+    .innerJoin(assets, eq(assets.id, withdrawals.assetId))
+    .where(eq(withdrawals.userId, userId))
+    .orderBy(desc(withdrawals.createdAt))
+    .limit(safeLimit);
+}
+
 export {
   confirmWithdrawalWithSettlementAtomically as confirmWithdrawalAtomically,
   confirmWithdrawalWithSettlementAtomically
