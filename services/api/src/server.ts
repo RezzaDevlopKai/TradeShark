@@ -136,7 +136,7 @@ export function createApiServer(identity: IdentityService | null, database: Trad
     const decision = authorize(
       {
         userId: session.user.id,
-        role: "user",
+        role: session.user.role,
         status: session.user.status
       },
       permission,
