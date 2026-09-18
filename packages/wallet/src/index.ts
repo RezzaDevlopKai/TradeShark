@@ -1,8 +1,9 @@
 import { randomUUID } from "node:crypto";
-import { and, eq, inArray } from "drizzle-orm";
+import { and, desc, eq, inArray } from "drizzle-orm";
 import type { PostJournalInput, TradeSharkDatabase } from "@tradeshark/database";
 import {
   assets,
+  deposits,
   ledgerAccountType,
   ledgerAccounts,
   ledgerBalanceProjections,
@@ -23,6 +24,51 @@ export {
   confirmWithdrawalWithSettlementAtomically as confirmWithdrawalAtomically,
   confirmWithdrawalWithSettlementAtomically
 } from "./withdrawalSettlement.js";
+
+export type UserDeposit = {
+  id: string;
+  assetId: string;
+  symbol: string;
+  name: string;
+  amount: string;
+  status: "pending" | "confirmed" | "credited" | "failed" | "reversed";
+  externalReference: string;
+  confirmationCount: number;
+  confirmedAt: Date | null;
+  creditedAt: Date | null;
+  failureReason: string | null;
+  createdAt: Date;
+};
+
+export async function getUserDeposits(
+  db: TradeSharkDatabase,
+  userId: string,
+  limit = 50
+): Promise<UserDeposit[]> {
+  const safeLimit = Math.min(Math.max(Math.trunc(limit), 1), 100);
+  const rows = await db
+    .select({
+      id: deposits.id,
+      assetId: assets.id,
+      symbol: assets.symbol,
+      name: assets.name,
+      amount: deposits.amount,
+      status: deposits.status,
+      externalReference: deposits.externalReference,
+      confirmationCount: deposits.confirmationCount,
+      confirmedAt: deposits.confirmedAt,
+      creditedAt: deposits.creditedAt,
+      failureReason: deposits.failureReason,
+      createdAt: deposits.createdAt
+    })
+    .from(deposits)
+    .innerJoin(assets, eq(assets.id, deposits.assetId))
+    .where(eq(deposits.userId, userId))
+    .orderBy(desc(deposits.createdAt))
+    .limit(safeLimit);
+
+  return rows;
+}
 
 export type WalletBalance = {
   accountId: string;
