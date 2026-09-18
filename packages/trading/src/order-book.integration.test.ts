@@ -9,7 +9,7 @@ const integration = databaseUrl ? describe : describe.skip;
 const database = databaseUrl ? createDatabase(databaseUrl) : null;
 
 integration("order book integration", () => {
-  after(async () => {
+  afterAll(async () => {
     await database?.pool.end();
   });
 
