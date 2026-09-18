@@ -13,8 +13,10 @@ for (const name of [
   "intelligence.html",
   "mayhem.html",
   "trade.html",
+  "admin.html",
   "styles.css",
   "app.js",
+  "admin.js",
   "api.js",
   "robots.txt",
   "sitemap.xml"
