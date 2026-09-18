@@ -13,6 +13,23 @@ export type OrderBook = {
   asks: OrderBookLevel[];
 };
 
+function normalizeDecimalString(value: unknown): string {
+  const text = String(value).trim();
+
+  if (!text.includes(".")) {
+    return text === "-0" ? "0" : text;
+  }
+
+  const [integerPart, fractionalPart] = text.split(".");
+  const normalizedFraction = fractionalPart.replace(/0+$/, "");
+
+  if (!normalizedFraction) {
+    return integerPart === "-0" ? "0" : integerPart;
+  }
+
+  return `${integerPart}.${normalizedFraction}`;
+}
+
 export async function getOrderBook(
   db: TradeSharkDatabase,
   marketId: string,
@@ -45,10 +62,10 @@ export async function getOrderBook(
   const bids: OrderBookLevel[] = [];
   const asks: OrderBookLevel[] = [];
 
-  for (const row of rows as unknown as Array<Record<string, unknown>>) {
+  for (const row of rows) {
     const level = {
-      price: String(row.price),
-      quantity: String(row.quantity),
+      price: normalizeDecimalString(row.price),
+      quantity: normalizeDecimalString(row.quantity),
       orderCount: Number(row.order_count)
     };
 
