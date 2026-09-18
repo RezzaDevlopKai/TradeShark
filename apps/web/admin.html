@@ -1,0 +1,81 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="description" content="TradeShark Admin Control Center">
+  <title>TradeShark — Admin Control Center</title>
+  <link rel="stylesheet" href="./styles.css">
+</head>
+<body class="admin-page">
+  <div class="admin-shell">
+    <aside class="admin-sidebar">
+      <a class="brand" href="./index.html"><span class="brand-mark">TS</span><span>TradeShark</span></a>
+      <div class="admin-kicker">CONTROL CENTER</div>
+      <nav class="admin-nav" aria-label="Admin navigation">
+        <button class="active" data-section="overview">Overview</button>
+        <button data-section="payments">Payments</button>
+        <button data-section="deposits">Manual Deposits</button>
+        <button data-section="users">Users</button>
+        <button data-section="trading">Trading</button>
+        <button data-section="security">Security</button>
+        <button data-section="system">System</button>
+        <button data-section="ai">AI Supervisor</button>
+      </nav>
+      <div class="admin-side-status"><span></span><div><b>Control plane</b><small>Protected workspace</small></div></div>
+    </aside>
+    <main class="admin-main">
+      <header class="admin-topbar">
+        <div><span class="admin-kicker">TRADESHARK / ADMIN</span><h1 id="section-title">Overview</h1></div>
+        <div class="admin-top-actions"><span class="admin-live"><i></i> ADMIN GATEWAY</span><a class="ghost-button" href="./index.html">Exit</a></div>
+      </header>
+
+      <section class="admin-section active" data-panel="overview">
+        <div class="admin-hero">
+          <div><p class="eyebrow">CONTROL WITHOUT CHAOS</p><h2>Operate the entire platform from one command surface.</h2><p>Payment configuration, manual deposit review, trading controls and system health are designed around explicit permissions and an auditable backend.</p></div>
+          <div class="admin-hero-orbit"><span>TS</span><i></i><b>3700+</b></div>
+        </div>
+        <div class="admin-metrics">
+          <article><small>PLATFORM</small><strong>Operational</strong><span class="metric-good">● Core services</span></article>
+          <article><small>DEPOSIT MODE</small><strong>Manual</strong><span>Admin verification required</span></article>
+          <article><small>TRADING FEE</small><strong>0.55%</strong><span>Execution policy</span></article>
+          <article><small>SECURITY</small><strong>RBAC</strong><span>Admin permission gate</span></article>
+        </div>
+        <div class="admin-grid-two">
+          <article class="admin-card"><div class="card-head"><div><small>QUICK CONTROL</small><h3>Payment command center</h3></div><button data-go="payments">Open settings →</button></div><div class="control-list"><div><b>Deposit floor</b><span>$2.50</span></div><div><b>Withdrawal floor</b><span>$10.00</span></div><div><b>Deposit verification</b><span>Manual</span></div><div><b>Gateway</b><span>Operator supplied</span></div></div></article>
+          <article class="admin-card"><div class="card-head"><div><small>ATTENTION</small><h3>Operator queue</h3></div><button data-go="deposits">Review queue →</button></div><div class="empty-queue"><span>00</span><div><b>No live queue connected</b><p>Connect the protected admin API to load real deposit requests.</p></div></div></article>
+        </div>
+      </section>
+
+      <section class="admin-section" data-panel="payments">
+        <div class="section-intro"><p class="eyebrow">PAYMENT CONFIGURATION</p><h2>Deposit methods</h2><p>These controls are ready for the protected admin API. Values shown here are configuration targets, not live payment instructions.</p></div>
+        <div class="payment-layout">
+          <article class="admin-card payment-editor">
+            <div class="card-head"><div><small>MANUAL DEPOSIT</small><h3>Primary method</h3></div><span class="config-pill">DRAFT</span></div>
+            <label>Asset<select disabled><option>USDT</option></select></label>
+            <div class="two-fields"><label>Network<input value="TRC20" disabled></label><label>Status<select disabled><option>Active</option></select></label></div>
+            <label>Deposit address<input value="Configured in secure backend" disabled></label>
+            <div class="two-fields"><label>Minimum<input value="2.50 USD" disabled></label><label>Fee<input value="0.00 USD" disabled></label></div>
+            <label>Customer instruction<textarea disabled>Send the selected asset to the address shown by the protected payment service, then submit the transaction reference for manual verification.</textarea></label>
+            <button class="admin-primary" disabled>Save payment configuration</button>
+            <p class="admin-note">Live editing will be enabled only after the admin payment-settings endpoint and secret storage are connected.</p>
+          </article>
+          <article class="admin-card"><div class="card-head"><div><small>PAYMENT SAFETY</small><h3>Guardrails</h3></div></div><div class="guard-list"><div><span>01</span><b>Secrets stay server-side</b><p>Wallet credentials and provider secrets never belong in the static website.</p></div><div><span>02</span><b>Every change is logged</b><p>Configuration changes will carry actor, timestamp, previous value and new value.</p></div><div><span>03</span><b>Ledger is authoritative</b><p>Approving a deposit credits the user's ledger through an atomic backend operation.</p></div></div></article>
+        </div>
+      </section>
+
+      <section class="admin-section" data-panel="deposits">
+        <div class="section-intro"><p class="eyebrow">OPERATOR QUEUE</p><h2>Manual deposits</h2><p>Review submitted deposits here. No balance is credited from the browser; approval belongs to the authenticated API.</p></div>
+        <article class="admin-card"><div class="queue-toolbar"><div><b>Pending verification</b><span>Waiting for protected API connection</span></div><button disabled>Refresh</button></div><div class="deposit-table"><div class="deposit-row head"><span>User</span><span>Asset</span><span>Amount</span><span>Reference</span><span>Status</span><span>Action</span></div><div class="deposit-row"><span>—</span><span>USDT</span><span>—</span><span>—</span><span class="status-wait">API offline</span><button disabled>Review</button></div></div></article>
+      </section>
+
+      <section class="admin-section" data-panel="users"><div class="section-intro"><p class="eyebrow">IDENTITY</p><h2>Users</h2><p>User management will use the existing session and role model. Admin actions will be permission-gated.</p></div><div class="admin-card placeholder-card"><span>USER CONTROL PLANE</span><h3>Identity operations are protected by RBAC.</h3><p>Next backend layer: searchable users, account status, wallet summary, sessions and security events.</p></div></section>
+      <section class="admin-section" data-panel="trading"><div class="section-intro"><p class="eyebrow">MARKET OPERATIONS</p><h2>Trading controls</h2><p>Market activation, fee policy, order flow and execution health will live here.</p></div><div class="admin-card placeholder-card"><span>EXECUTION CONTROL</span><h3>Ledger-backed trading remains the source of truth.</h3><p>The public terminal already consumes server-backed market discovery, order book and trade data.</p></div></section>
+      <section class="admin-section" data-panel="security"><div class="section-intro"><p class="eyebrow">SECURITY</p><h2>Security center</h2><p>High-risk financial actions will require explicit authorization and auditable events.</p></div><div class="security-grid"><div class="admin-card"><b>RBAC</b><strong>Admin / Support / User</strong><span>Existing permission policy</span></div><div class="admin-card"><b>SESSION</b><strong>HttpOnly cookie</strong><span>Server-side session validation</span></div><div class="admin-card"><b>LEDGER</b><strong>Atomic journals</strong><span>No client-side balance mutation</span></div></div></section>
+      <section class="admin-section" data-panel="system"><div class="section-intro"><p class="eyebrow">INFRASTRUCTURE</p><h2>System</h2><p>Health, deployment, database connectivity and background jobs will be visible from this control surface.</p></div><div class="admin-card placeholder-card"><span>SYSTEM TELEMETRY</span><h3>Protected observability layer ready for expansion.</h3><p>Public API status currently exposes service health; detailed telemetry should remain authenticated.</p></div></section>
+      <section class="admin-section" data-panel="ai"><div class="section-intro"><p class="eyebrow">AUTONOMOUS OPERATIONS</p><h2>AI Supervisor</h2><p>Future automation can monitor, diagnose and propose changes, while sensitive financial actions remain policy-gated.</p></div><div class="admin-card ai-card"><div class="ai-core">AI</div><div><span>SUPERVISOR CORE</span><h3>Observe → Diagnose → Propose → Approve → Execute</h3><p>The supervisor should never silently change payment addresses or credit balances. High-risk operations require explicit policy and audit controls.</p></div></div></section>
+    </main>
+  </div>
+  <script type="module" src="./admin.js"></script>
+</body>
+</html>
