@@ -100,7 +100,7 @@ describe("PostgreSQL persistent execution integration", () => {
       expect(await balance(sellerBaseLocked)).toBe("1.000000000000000000");
       expect(await balance(buyerQuoteLocked)).toBe("12.066000000000000000");
 
-      const execution = await executeLimitOrder(client.db, { orderId: buy.id });
+      const execution = await executeLimitOrder(client.db, { orderId: buy.id, userId: buyerId });
       expect(execution.idempotent).toBe(false);
       expect(execution.status).toBe("filled");
       expect(execution.remainingQuantity).toBe("0.000000000000000000");
