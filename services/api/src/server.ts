@@ -4,7 +4,7 @@ import { authorize } from "@tradeshark/authorization";
 import { createDatabase } from "@tradeshark/database";
 import type { TradeSharkDatabase } from "@tradeshark/database";
 import { IdentityError, IdentityService } from "@tradeshark/identity";
-import { createManualDepositRequest, createWithdrawalRequest, getUserBalances, getUserDeposits } from "@tradeshark/wallet";
+import { createManualDepositRequest, createWithdrawalRequest, getUserBalances, getUserDeposits, getUserWithdrawals } from "@tradeshark/wallet";
 
 const MAX_JSON_BODY_BYTES = 32 * 1024;
 const AUTH_RATE_LIMIT_WINDOW_MS = 5 * 60 * 1000;
@@ -351,7 +351,8 @@ export function createApiServer(identity: IdentityService | null, database: Trad
             error.message.startsWith("Invalid positive decimal") ||
             error.message === "Invalid idempotency key" ||
             error.message === "Withdrawal destination is required" ||
-            error.message === "Withdrawals are supported only for active USDT"
+            error.message === "Withdrawals are supported only for active USDT" ||
+            error.message === "Minimum USDT withdrawal is 10"
           )) {
             json(res, 400, { error: error.message });
             return;
