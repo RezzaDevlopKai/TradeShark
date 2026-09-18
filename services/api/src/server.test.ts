@@ -104,6 +104,7 @@ test("authentication endpoints manage an HttpOnly session and protected account 
       email: string;
       username: string;
       status: string;
+      role: string;
       createdAt: string;
       updatedAt: string;
     };
@@ -112,6 +113,7 @@ test("authentication endpoints manage an HttpOnly session and protected account 
   assert.equal(registrationBody.user.email, email);
   assert.equal(registrationBody.user.username, username);
   assert.equal(registrationBody.user.status, "active");
+  assert.equal(registrationBody.user.role, "user");
   assert.ok(registrationBody.user.id);
   assert.ok(registrationBody.user.createdAt);
   assert.ok(registrationBody.user.updatedAt);
