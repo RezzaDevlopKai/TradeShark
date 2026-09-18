@@ -13,3 +13,71 @@
 .admin-auth-card input{width:100%;box-sizing:border-box;padding:13px 14px;border-radius:12px;border:1px solid rgba(123,150,255,.18);background:#080d18;color:#fff;outline:none}
 .admin-auth-card input:focus{border-color:rgba(100,145,255,.7)}
 .admin-auth-card .ghost-button{display:inline-flex;text-decoration:none}
+
+
+/* --- TradeShark Command UI refinement --- */
+.admin-page{background:
+ radial-gradient(900px 500px at 82% -10%,rgba(70,255,199,.12),transparent 65%),
+ radial-gradient(700px 500px at 8% 18%,rgba(92,118,255,.10),transparent 65%),
+ #03060b;color:#eef5ff}
+.admin-shell{grid-template-columns:268px minmax(0,1fr)}
+.admin-sidebar{padding:22px 16px;background:rgba(3,8,15,.72);border-right:1px solid rgba(160,184,220,.12)}
+.admin-sidebar>.brand{padding:10px 10px 4px;font-size:15px}
+.admin-sidebar .brand-mark{width:38px;height:38px;border-radius:12px;box-shadow:0 0 28px rgba(103,244,197,.10)}
+.admin-sidebar .admin-kicker{margin:42px 10px 13px;color:#71839d}
+.admin-nav{gap:6px}
+.admin-nav button{position:relative;padding:12px 13px;border-radius:11px;color:#7789a2;transition:.2s ease;background:transparent}
+.admin-nav button:hover{background:rgba(255,255,255,.035);color:#dbe7f7}
+.admin-nav button.active{background:linear-gradient(90deg,rgba(103,244,197,.12),rgba(103,244,197,.025));border-color:rgba(103,244,197,.14);color:#8ff7d3;box-shadow:inset 3px 0 0 #67f4c5}
+.admin-side-status{background:rgba(255,255,255,.025);border-color:rgba(160,184,220,.10)}
+.admin-main{background:linear-gradient(180deg,rgba(8,14,24,.20),transparent 40%)}
+.admin-topbar{height:82px;padding:0 clamp(20px,3vw,44px);border-color:rgba(160,184,220,.10)}
+.admin-topbar h1{font-size:20px;font-weight:750}
+.admin-live{padding:7px 10px;border:1px solid rgba(103,244,197,.15);border-radius:999px;background:rgba(103,244,197,.04)}
+.admin-section{max-width:1440px;padding:46px clamp(20px,3vw,48px) 90px}
+.admin-hero{grid-template-columns:minmax(0,1fr) 300px;padding:18px 0 38px}
+.admin-hero h2,.section-intro h2{font-weight:760;letter-spacing:-.045em}
+.admin-hero p:not(.eyebrow),.section-intro>p:not(.eyebrow){max-width:760px;color:#899ab2}
+.admin-hero-orbit{height:220px;background:radial-gradient(circle,rgba(103,244,197,.07),transparent 58%);border-color:rgba(103,244,197,.13);box-shadow:inset 0 0 90px rgba(103,244,197,.035),0 0 70px rgba(45,103,255,.06)}
+.admin-metrics{gap:10px}
+.admin-metrics article,.admin-card{border-color:rgba(160,184,220,.10);background:linear-gradient(145deg,rgba(13,23,37,.90),rgba(5,11,19,.90));box-shadow:0 18px 50px rgba(0,0,0,.16)}
+.admin-metrics article{min-height:126px;padding:18px}
+.admin-metrics strong{font-size:21px;letter-spacing:-.03em}
+.admin-card{padding:22px}
+.admin-card:hover{border-color:rgba(103,244,197,.15)}
+.card-head h3{font-weight:720}
+.control-list div{padding:13px 0}
+.payment-editor input,.payment-editor select,.payment-editor textarea{background:rgba(2,7,13,.72);border-color:rgba(160,184,220,.11)}
+.admin-primary{background:linear-gradient(135deg,#67f4c5,#42d8b0);color:#03110c;box-shadow:0 10px 30px rgba(103,244,197,.10)}
+.admin-primary:not(:disabled){cursor:pointer}
+.config-pill{background:rgba(212,169,93,.06)}
+.deposit-row{border-color:rgba(160,184,220,.08)}
+.placeholder-card{background:
+ radial-gradient(circle at 85% 15%,rgba(103,244,197,.07),transparent 25%),
+ linear-gradient(145deg,rgba(13,23,37,.90),rgba(5,11,19,.90))}
+.ai-card{background:
+ radial-gradient(circle at 12% 50%,rgba(103,244,197,.08),transparent 28%),
+ linear-gradient(145deg,rgba(13,23,37,.90),rgba(5,11,19,.90))}
+.ai-core{box-shadow:0 0 65px rgba(103,244,197,.10);background:rgba(103,244,197,.025)}
+.admin-auth-gate{background:
+ radial-gradient(700px 420px at 50% 0,rgba(103,244,197,.12),transparent 65%),
+ radial-gradient(600px 500px at 10% 100%,rgba(91,111,255,.10),transparent 70%),#03060b}
+.admin-auth-card{width:min(480px,100%);padding:38px;border-color:rgba(160,184,220,.13);background:linear-gradient(145deg,rgba(12,22,36,.94),rgba(4,10,17,.96));box-shadow:0 30px 100px rgba(0,0,0,.55)}
+.admin-auth-card h1{font-weight:780}
+.admin-auth-card input{background:rgba(2,7,13,.75);border-color:rgba(160,184,220,.13);transition:.2s}
+.admin-auth-card input:focus{border-color:rgba(103,244,197,.55);box-shadow:0 0 0 3px rgba(103,244,197,.07)}
+.admin-auth-card .admin-primary{margin-top:4px;padding:14px}
+@media(max-width:900px){
+ .admin-sidebar{padding:14px}
+ .admin-sidebar .admin-kicker{margin-top:24px}
+ .admin-nav{grid-template-columns:repeat(4,1fr)}
+ .admin-hero{grid-template-columns:1fr}
+ .admin-hero-orbit{display:none}
+}
+@media(max-width:560px){
+ .admin-nav{grid-template-columns:repeat(2,1fr)}
+ .admin-nav button{padding:11px 10px}
+ .admin-topbar{padding:0 14px}
+ .admin-section{padding:28px 14px 60px}
+ .admin-auth-card{padding:28px 22px;border-radius:20px}
+}
