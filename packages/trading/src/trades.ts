@@ -6,6 +6,14 @@ import { alias } from "drizzle-orm/pg-core";
 const buyOrders = alias(orders, "buy_orders");
 const sellOrders = alias(orders, "sell_orders");
 
+export type RecentMarketTrade = {
+  id: string;
+  marketId: string;
+  price: string;
+  quantity: string;
+  executedAt: Date;
+};
+
 export type UserTrade = {
   id: string;
   marketId: string;
@@ -17,6 +25,18 @@ export type UserTrade = {
   executedAt: Date;
   side: "buy" | "sell";
 };
+
+export async function getRecentMarketTrades(
+  db: TradeSharkDatabase,
+  marketId: string,
+  limit = 50
+): Promise<RecentMarketTrade[]> {
+  if (!marketId.trim()) throw new Error("marketId is required");
+  if (!Number.isInteger(limit) || limit < 1 || limit > 100) throw new Error("limit must be between 1 and 100");
+  const rows = await db.select({ id: trades.id, marketId: trades.marketId, price: trades.price, quantity: trades.quantity, executedAt: trades.executedAt })
+    .from(trades).where(eq(trades.marketId, marketId)).orderBy(desc(trades.executedAt), desc(trades.id)).limit(limit);
+  return rows.map((row) => ({ id: row.id, marketId: row.marketId, price: row.price, quantity: row.quantity, executedAt: row.executedAt }));
+}
 
 export async function getUserTrades(
   db: TradeSharkDatabase,
