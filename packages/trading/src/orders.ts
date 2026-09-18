@@ -277,3 +277,49 @@ function multiplyDecimals(left: string, right: string): string {
 function addDecimals(left: string, right: string): string {
   return formatScaled(parseScaled(left) + parseScaled(right));
 }
+
+export type UserOrder = {
+  id: string;
+  userId: string;
+  marketId: string;
+  side: "buy" | "sell";
+  status: "pending" | "open" | "partially_filled" | "filled" | "cancelled" | "rejected";
+  quantity: string;
+  remainingQuantity: string;
+  limitPrice: string | null;
+  feeRate: string;
+  clientOrderId: string;
+  sequence: number;
+  createdAt: Date;
+  updatedAt: Date;
+};
+
+export async function getUserOrders(
+  db: TradeSharkDatabase,
+  userId: string,
+  limit = 50
+): Promise<UserOrder[]> {
+  if (!userId.trim()) throw new Error("userId is required");
+  if (!Number.isInteger(limit) || limit < 1 || limit > 100) throw new Error("limit must be between 1 and 100");
+
+  return db
+    .select({
+      id: orders.id,
+      userId: orders.userId,
+      marketId: orders.marketId,
+      side: orders.side,
+      status: orders.status,
+      quantity: orders.quantity,
+      remainingQuantity: orders.remainingQuantity,
+      limitPrice: orders.limitPrice,
+      feeRate: orders.feeRate,
+      clientOrderId: orders.clientOrderId,
+      sequence: orders.sequence,
+      createdAt: orders.createdAt,
+      updatedAt: orders.updatedAt
+    })
+    .from(orders)
+    .where(eq(orders.userId, userId))
+    .orderBy(sql`"orders"."created_at" DESC, "orders"."sequence" DESC`)
+    .limit(limit);
+}
