@@ -20,7 +20,9 @@ function normalizeDecimalString(value: unknown): string {
     return text === "-0" ? "0" : text;
   }
 
-  const [integerPart, fractionalPart] = text.split(".");
+  const separatorIndex = text.indexOf(".");
+  const integerPart = text.slice(0, separatorIndex);
+  const fractionalPart = text.slice(separatorIndex + 1);
   const normalizedFraction = fractionalPart.replace(/0+$/, "");
 
   if (!normalizedFraction) {
