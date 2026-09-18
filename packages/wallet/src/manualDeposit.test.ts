@@ -32,6 +32,34 @@ describe("manual deposit review services", () => {
     ).rejects.toThrow("Invalid positive decimal amount");
   });
 
+  it("enforces the minimum deposit and ledger precision without floating point", async () => {
+    const db = {} as Parameters<typeof createManualDepositRequest>[0];
+
+    await expect(
+      createManualDepositRequest(db, {
+        userId: "user",
+        assetId: "asset",
+        amount: "2.499999999999999999"
+      })
+    ).rejects.toThrow("Minimum deposit amount is 2.5");
+
+    await expect(
+      createManualDepositRequest(db, {
+        userId: "user",
+        assetId: "asset",
+        amount: "2.500000000000000000"
+      })
+    ).rejects.toThrow("Required USER_PENDING_DEPOSIT ledger account does not exist");
+
+    await expect(
+      createManualDepositRequest(db, {
+        userId: "user",
+        assetId: "asset",
+        amount: "2.5000000000000000001"
+      })
+    ).rejects.toThrow("Invalid positive decimal amount");
+  });
+
   it("requires a rejection reason before touching the database", async () => {
     const db = {} as Parameters<typeof rejectManualDeposit>[0];
 
