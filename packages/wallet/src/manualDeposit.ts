@@ -28,11 +28,29 @@ function assertPositiveDecimal(amount: string): string {
 
   const integerPart = match[1] ?? "";
   const fractionalPart = match[2] ?? "";
-  if (/^0+$/.test(integerPart) && /^0*$/.test(fractionalPart)) {
+  if (fractionalPart.length > 18 || (/^0+$/.test(integerPart) && /^0*$/.test(fractionalPart))) {
     throw new Error(`Invalid positive decimal amount: ${amount}`);
   }
 
   return normalized;
+}
+
+function compareDecimalAmounts(left: string, right: string): number {
+  const [leftInteger, leftFraction = ""] = left.split(".");
+  const [rightInteger, rightFraction = ""] = right.split(".");
+  const normalizedLeftInteger = leftInteger.replace(/^0+(?=\d)/, "");
+  const normalizedRightInteger = rightInteger.replace(/^0+(?=\d)/, "");
+  if (normalizedLeftInteger.length !== normalizedRightInteger.length) {
+    return normalizedLeftInteger.length < normalizedRightInteger.length ? -1 : 1;
+  }
+  if (normalizedLeftInteger !== normalizedRightInteger) {
+    return normalizedLeftInteger < normalizedRightInteger ? -1 : 1;
+  }
+  const fractionLength = Math.max(leftFraction.length, rightFraction.length);
+  const normalizedLeftFraction = leftFraction.padEnd(fractionLength, "0");
+  const normalizedRightFraction = rightFraction.padEnd(fractionLength, "0");
+  if (normalizedLeftFraction === normalizedRightFraction) return 0;
+  return normalizedLeftFraction < normalizedRightFraction ? -1 : 1;
 }
 
 async function findJournalTransactionId(
@@ -63,7 +81,7 @@ export async function createManualDepositRequest(
   input: ManualDepositInput
 ): Promise<{ depositId: string; externalReference: string }> {
   const amount = assertPositiveDecimal(input.amount);
-  if (Number(amount) < Number(MIN_DEPOSIT_AMOUNT)) {
+  if (compareDecimalAmounts(amount, MIN_DEPOSIT_AMOUNT) < 0) {
     throw new Error(`Minimum deposit amount is ${MIN_DEPOSIT_AMOUNT}`);
   }
   const idempotencyKey = input.idempotencyKey?.trim() ?? `legacy-${randomUUID()}`;
