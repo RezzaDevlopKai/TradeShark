@@ -4,7 +4,7 @@ import { authorize } from "@tradeshark/authorization";
 import { createDatabase } from "@tradeshark/database";
 import type { TradeSharkDatabase } from "@tradeshark/database";
 import { IdentityError, IdentityService } from "@tradeshark/identity";
-import { cancelLimitOrder, executeLimitOrder, getUserOrders, placeLimitOrder } from "@tradeshark/trading";
+import { cancelLimitOrder, executeLimitOrder, getUserOrders, getUserTrades, placeLimitOrder } from "@tradeshark/trading";
 import { createManualDepositRequest, createWithdrawalRequest, getUserBalances, getUserDeposits, getUserWithdrawals } from "@tradeshark/wallet";
 
 const MAX_JSON_BODY_BYTES = 32 * 1024;
@@ -515,6 +515,38 @@ export function createApiServer(identity: IdentityService | null, database: Trad
             error.message === "Quote fee revenue account does not exist"
           )) {
             json(res, 409, { error: "TRADING_NOT_PROVISIONED" });
+            return;
+          }
+          json(res, 500, { error: "INTERNAL_SERVER_ERROR" });
+        }
+        return;
+      }
+
+      if (req.method === "GET" && url.pathname === "/api/v1/trades") {
+        const session = await authenticate(req, res);
+        if (!session) return;
+        if (!requirePermission(res, session, "trades:read", session.user.id)) return;
+        if (!database) {
+          json(res, 503, { error: "DATABASE_UNAVAILABLE" });
+          return;
+        }
+
+        const rawLimit = url.searchParams.get("limit");
+        const parsedLimit = rawLimit === null ? 50 : Number(rawLimit);
+        if (!Number.isInteger(parsedLimit) || parsedLimit < 1 || parsedLimit > 100) {
+          json(res, 400, { error: "INVALID_LIMIT" });
+          return;
+        }
+
+        try {
+          const trades = await getUserTrades(database, session.user.id, parsedLimit);
+          json(res, 200, { trades });
+        } catch (error) {
+          if (error instanceof Error && (
+            error.message === "userId is required" ||
+            error.message === "limit must be between 1 and 100"
+          )) {
+            json(res, 400, { error: error.message });
             return;
           }
           json(res, 500, { error: "INTERNAL_SERVER_ERROR" });
