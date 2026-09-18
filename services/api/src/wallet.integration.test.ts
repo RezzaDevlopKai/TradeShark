@@ -144,7 +144,7 @@ integration("API wallet integration", () => {
       assert.equal(body.deposits.length, 1);
       assert.equal(body.deposits[0]?.id, depositId);
       assert.equal(body.deposits[0]?.assetId, assetId);
-      assert.equal(body.deposits[0]?.amount, "12.34");
+      assert.equal(body.deposits[0]?.amount, "12.340000000000000000");
       assert.equal(body.deposits[0]?.status, "pending");
       assert.equal(body.deposits[0]?.confirmationCount, 2);
       assert.equal(body.deposits[0]?.externalReference, `api-wallet-history:${depositId}`);
