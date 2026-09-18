@@ -4,7 +4,7 @@ import { authorize } from "@tradeshark/authorization";
 import { createDatabase } from "@tradeshark/database";
 import type { TradeSharkDatabase } from "@tradeshark/database";
 import { IdentityError, IdentityService } from "@tradeshark/identity";
-import { cancelLimitOrder, executeLimitOrder, getActiveMarkets, getUserOrders, getUserTrades, placeLimitOrder } from "@tradeshark/trading";
+import { cancelLimitOrder, executeLimitOrder, getActiveMarkets, getOrderBook, getUserOrders, getUserTrades, placeLimitOrder } from "@tradeshark/trading";
 import { createManualDepositRequest, createWithdrawalRequest, getUserBalances, getUserDeposits, getUserWithdrawals } from "@tradeshark/wallet";
 
 const MAX_JSON_BODY_BYTES = 32 * 1024;
@@ -571,6 +571,43 @@ export function createApiServer(identity: IdentityService | null, database: Trad
           const markets = await getActiveMarkets(database, parsedLimit);
           json(res, 200, { markets });
         } catch {
+          json(res, 500, { error: "INTERNAL_SERVER_ERROR" });
+        }
+        return;
+      }
+
+      if (req.method === "GET" && url.pathname.startsWith("/api/v1/markets/") && url.pathname.endsWith("/order-book")) {
+        if (!database) {
+          json(res, 503, { error: "DATABASE_UNAVAILABLE" });
+          return;
+        }
+
+        const prefix = "/api/v1/markets/";
+        const suffix = "/order-book";
+        const marketId = decodeURIComponent(url.pathname.slice(prefix.length, -suffix.length));
+        if (!marketId.trim()) {
+          json(res, 400, { error: "INVALID_MARKET_ID" });
+          return;
+        }
+
+        const rawDepth = url.searchParams.get("depth");
+        const parsedDepth = rawDepth === null ? 25 : Number(rawDepth);
+        if (!Number.isInteger(parsedDepth) || parsedDepth < 1 || parsedDepth > 100) {
+          json(res, 400, { error: "INVALID_DEPTH" });
+          return;
+        }
+
+        try {
+          const orderBook = await getOrderBook(database, marketId, parsedDepth);
+          json(res, 200, orderBook);
+        } catch (error) {
+          if (error instanceof Error && (
+            error.message === "marketId is required" ||
+            error.message === "depth must be between 1 and 100"
+          )) {
+            json(res, 400, { error: error.message });
+            return;
+          }
           json(res, 500, { error: "INTERNAL_SERVER_ERROR" });
         }
         return;
