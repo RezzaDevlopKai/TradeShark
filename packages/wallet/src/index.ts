@@ -8,7 +8,8 @@ import {
   ledgerAccounts,
   ledgerBalanceProjections,
   postJournal,
-  withdrawals
+  withdrawals,
+  users
 } from "@tradeshark/database";
 
 export * from "./deposit.js";
@@ -68,6 +69,57 @@ export {
   confirmWithdrawalWithSettlementAtomically as confirmWithdrawalAtomically,
   confirmWithdrawalWithSettlementAtomically
 } from "./withdrawalSettlement.js";
+
+export type AdminDeposit = {
+  id: string;
+  userId: string;
+  username: string;
+  email: string;
+  assetId: string;
+  symbol: string;
+  name: string;
+  amount: string;
+  status: "pending" | "confirmed" | "credited" | "failed" | "reversed";
+  externalReference: string;
+  confirmationCount: number;
+  confirmedAt: Date | null;
+  creditedAt: Date | null;
+  failureReason: string | null;
+  createdAt: Date;
+};
+
+export async function getAdminDeposits(
+  db: TradeSharkDatabase,
+  status: AdminDeposit["status"] | undefined = "pending",
+  limit = 50
+): Promise<AdminDeposit[]> {
+  const safeLimit = Math.min(Math.max(Math.trunc(limit), 1), 100);
+  const columns = {
+    id: deposits.id,
+    userId: deposits.userId,
+    username: users.username,
+    email: users.email,
+    assetId: assets.id,
+    symbol: assets.symbol,
+    name: assets.name,
+    amount: deposits.amount,
+    status: deposits.status,
+    externalReference: deposits.externalReference,
+    confirmationCount: deposits.confirmationCount,
+    confirmedAt: deposits.confirmedAt,
+    creditedAt: deposits.creditedAt,
+    failureReason: deposits.failureReason,
+    createdAt: deposits.createdAt
+  };
+  const base = db.select(columns)
+    .from(deposits)
+    .innerJoin(users, eq(users.id, deposits.userId))
+    .innerJoin(assets, eq(assets.id, deposits.assetId));
+  const rows = status === undefined
+    ? await base.orderBy(desc(deposits.createdAt)).limit(safeLimit)
+    : await base.where(eq(deposits.status, status)).orderBy(desc(deposits.createdAt)).limit(safeLimit);
+  return rows;
+}
 
 export type UserDeposit = {
   id: string;
