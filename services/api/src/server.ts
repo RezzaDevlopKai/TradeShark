@@ -4,6 +4,7 @@ import { authorize } from "@tradeshark/authorization";
 import { createDatabase } from "@tradeshark/database";
 import type { TradeSharkDatabase } from "@tradeshark/database";
 import { IdentityError, IdentityService } from "@tradeshark/identity";
+import { cancelLimitOrder, getUserOrders, placeLimitOrder } from "@tradeshark/trading";
 import { createManualDepositRequest, createWithdrawalRequest, getUserBalances, getUserDeposits, getUserWithdrawals } from "@tradeshark/wallet";
 
 const MAX_JSON_BODY_BYTES = 32 * 1024;
@@ -409,6 +410,129 @@ export function createApiServer(identity: IdentityService | null, database: Trad
 
         const deposits = await getUserDeposits(database, session.user.id, parsedLimit);
         json(res, 200, { deposits });
+        return;
+      }
+
+      if (req.method === "POST" && url.pathname === "/api/v1/orders") {
+        const session = await authenticate(req, res);
+        if (!session) return;
+        if (!requirePermission(res, session, "orders:create", session.user.id)) return;
+        if (!database) {
+          json(res, 503, { error: "DATABASE_UNAVAILABLE" });
+          return;
+        }
+
+        const body = await readJson(req);
+        if (
+          !body ||
+          typeof body.marketId !== "string" ||
+          typeof body.side !== "string" ||
+          typeof body.price !== "string" ||
+          typeof body.quantity !== "string" ||
+          typeof body.clientOrderId !== "string" ||
+          (body.feeRate !== undefined && typeof body.feeRate !== "string")
+        ) {
+          json(res, 400, { error: "INVALID_REQUEST" });
+          return;
+        }
+
+        try {
+          const result = await placeLimitOrder(database, {
+            userId: session.user.id,
+            marketId: body.marketId,
+            side: body.side as "buy" | "sell",
+            price: body.price,
+            quantity: body.quantity,
+            clientOrderId: body.clientOrderId,
+            ...(body.feeRate === undefined ? {} : { feeRate: body.feeRate })
+          });
+          json(res, result.idempotent ? 200 : 201, result);
+        } catch (error) {
+          if (error instanceof Error && (
+            error.message === "invalid order side" ||
+            error.message.includes("required") ||
+            error.message.startsWith("Invalid positive decimal") ||
+            error.message.startsWith("Invalid decimal") ||
+            error.message.includes("feeRate must have") ||
+            error.message.includes("clientOrderId was already used")
+          )) {
+            json(res, 400, { error: error.message });
+            return;
+          }
+          if (error instanceof Error && error.message.includes("does not exist or is inactive")) {
+            json(res, 400, { error: error.message });
+            return;
+          }
+          if (error instanceof Error && error.message.includes("Insufficient wallet balance")) {
+            json(res, 409, { error: "INSUFFICIENT_BALANCE" });
+            return;
+          }
+          if (error instanceof Error && error.message.includes("Required USER_AVAILABLE")) {
+            json(res, 409, { error: "WALLET_NOT_PROVISIONED" });
+            return;
+          }
+          json(res, 500, { error: "INTERNAL_SERVER_ERROR" });
+        }
+        return;
+      }
+
+      if (req.method === "GET" && url.pathname === "/api/v1/orders") {
+        const session = await authenticate(req, res);
+        if (!session) return;
+        if (!requirePermission(res, session, "orders:read", session.user.id)) return;
+        if (!database) {
+          json(res, 503, { error: "DATABASE_UNAVAILABLE" });
+          return;
+        }
+
+        const rawLimit = url.searchParams.get("limit");
+        const parsedLimit = rawLimit === null ? 50 : Number(rawLimit);
+        if (!Number.isInteger(parsedLimit) || parsedLimit < 1 || parsedLimit > 100) {
+          json(res, 400, { error: "INVALID_LIMIT" });
+          return;
+        }
+
+        const orders = await getUserOrders(database, session.user.id, parsedLimit);
+        json(res, 200, { orders });
+        return;
+      }
+
+      if (req.method === "DELETE" && url.pathname.startsWith("/api/v1/orders/")) {
+        const session = await authenticate(req, res);
+        if (!session) return;
+        if (!requirePermission(res, session, "orders:cancel", session.user.id)) return;
+        if (!database) {
+          json(res, 503, { error: "DATABASE_UNAVAILABLE" });
+          return;
+        }
+
+        const orderId = decodeURIComponent(url.pathname.slice("/api/v1/orders/".length));
+        if (!orderId.trim()) {
+          json(res, 400, { error: "INVALID_ORDER_ID" });
+          return;
+        }
+
+        try {
+          const result = await cancelLimitOrder(database, {
+            userId: session.user.id,
+            orderId
+          });
+          json(res, 200, result);
+        } catch (error) {
+          if (error instanceof Error && (
+            error.message === "orderId is required" ||
+            error.message === "Order does not exist" ||
+            error.message.startsWith("Order cannot be cancelled")
+          )) {
+            json(res, 400, { error: error.message });
+            return;
+          }
+          if (error instanceof Error && error.message.includes("Insufficient wallet balance")) {
+            json(res, 409, { error: "LEDGER_INCONSISTENT" });
+            return;
+          }
+          json(res, 500, { error: "INTERNAL_SERVER_ERROR" });
+        }
         return;
       }
 
