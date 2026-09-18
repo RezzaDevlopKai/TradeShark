@@ -492,12 +492,14 @@ export function createApiServer(identity: IdentityService | null, database: Trad
         }
 
         try {
-          const result = await executeLimitOrder(database, { orderId });
+          const result = await executeLimitOrder(database, { orderId, userId: session.user.id });
           json(res, 200, result);
         } catch (error) {
           if (error instanceof Error && (
             error.message === "orderId is required" ||
+            error.message === "userId is required" ||
             error.message === "Order does not exist" ||
+            error.message === "Order ownership is required" ||
             error.message.startsWith("Order cannot be executed from status") ||
             error.message === "Limit order price is required for execution"
           )) {
