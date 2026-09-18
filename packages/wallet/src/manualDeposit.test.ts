@@ -33,7 +33,18 @@ describe("manual deposit review services", () => {
   });
 
   it("enforces the minimum deposit and ledger precision without floating point", async () => {
-    const db = {} as Parameters<typeof createManualDepositRequest>[0];
+    const tx = {
+      select: () => ({
+        from: () => ({
+          where: () => ({
+            limit: async () => []
+          })
+        })
+      })
+    };
+    const db = {
+      transaction: async (callback: (value: typeof tx) => unknown) => callback(tx)
+    } as unknown as Parameters<typeof createManualDepositRequest>[0];
 
     await expect(
       createManualDepositRequest(db, {
