@@ -1,8 +1,13 @@
 import { createHash, randomUUID } from "node:crypto";
-import { and, eq } from "drizzle-orm";
+import { and, eq, inArray } from "drizzle-orm";
 import type { TradeSharkDatabase } from "@tradeshark/database";
-import { idempotencyKeys, ledgerAccounts, withdrawals } from "@tradeshark/database";
-import { requestWithdrawalAtomically } from "./funding.js";
+import {
+  idempotencyKeys,
+  journalTransactions,
+  ledgerAccounts,
+  postJournalInTransaction,
+  withdrawals
+} from "@tradeshark/database";
 
 const MIN_IDEMPOTENCY_KEY_LENGTH = 8;
 const MAX_IDEMPOTENCY_KEY_LENGTH = 128;
@@ -29,40 +34,34 @@ function assertPositiveDecimal(amount: string): string {
   const normalized = amount.trim();
   const match = /^(\d+)(?:\.(\d+))?$/.exec(normalized);
   if (!match) throw new Error(`Invalid positive decimal amount: ${amount}`);
-
   const integerPart = match[1] ?? "";
   const fractionalPart = match[2] ?? "";
-  if (
-    fractionalPart.length > 18 ||
-    (/^0+$/.test(integerPart) && /^0*$/.test(fractionalPart))
-  ) {
+  if (fractionalPart.length > 18 || (/^0+$/.test(integerPart) && /^0*$/.test(fractionalPart))) {
     throw new Error(`Invalid positive decimal amount: ${amount}`);
   }
-
   return normalized;
 }
 
 function normalizeIdempotencyKey(value: string): string {
   const key = value.trim();
-  if (
-    key.length < MIN_IDEMPOTENCY_KEY_LENGTH ||
-    key.length > MAX_IDEMPOTENCY_KEY_LENGTH ||
-    !/^[A-Za-z0-9._:-]+$/.test(key)
-  ) {
+  if (key.length < MIN_IDEMPOTENCY_KEY_LENGTH || key.length > MAX_IDEMPOTENCY_KEY_LENGTH || !/^[A-Za-z0-9._:-]+$/.test(key)) {
     throw new Error("Invalid idempotency key");
   }
   return key;
 }
 
 function hashRequest(input: Omit<CreateWithdrawalRequestInput, "idempotencyKey">): string {
-  return createHash("sha256")
-    .update(JSON.stringify({
-      userId: input.userId,
-      assetId: input.assetId,
-      amount: input.amount,
-      destination: input.destination
-    }))
-    .digest("hex");
+  return createHash("sha256").update(JSON.stringify(input)).digest("hex");
+}
+
+async function findJournalTransactionId(
+  db: Pick<TradeSharkDatabase, "select">,
+  idempotencyKey: string
+): Promise<string> {
+  const rows = await db.select({ id: journalTransactions.id }).from(journalTransactions)
+    .where(eq(journalTransactions.idempotencyKey, idempotencyKey)).limit(1);
+  if (!rows[0]) throw new Error(`Ledger journal for ${idempotencyKey} was not found`);
+  return rows[0].id;
 }
 
 export async function createWithdrawalRequest(
@@ -73,29 +72,23 @@ export async function createWithdrawalRequest(
   const destination = input.destination.trim();
   if (!destination) throw new Error("Withdrawal destination is required");
   const idempotencyKey = normalizeIdempotencyKey(input.idempotencyKey);
-  const requestHash = hashRequest({ ...input, amount, destination });
+  const requestHash = hashRequest({ userId: input.userId, assetId: input.assetId, amount, destination });
   const storageKey = `wallet:withdrawal:${input.userId}:${idempotencyKey}`;
-  const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000);
 
   return db.transaction(async (tx) => {
-    const existingRows = await tx
-      .select({
-        requestHash: idempotencyKeys.requestHash,
-        responseStatus: idempotencyKeys.responseStatus,
-        responseBody: idempotencyKeys.responseBody
-      })
-      .from(idempotencyKeys)
-      .where(eq(idempotencyKeys.key, storageKey))
-      .limit(1);
-
+    const existingRows = await tx.select({
+      requestHash: idempotencyKeys.requestHash,
+      responseBody: idempotencyKeys.responseBody
+    }).from(idempotencyKeys).where(eq(idempotencyKeys.key, storageKey)).limit(1);
     const existing = existingRows[0];
+
     if (existing) {
       if (existing.requestHash !== requestHash) {
         throw new Error("Idempotency key was already used with a different withdrawal request");
       }
       const body = existing.responseBody as Partial<CreateWithdrawalRequestResult> | null;
       if (!body?.withdrawalId || !body.transactionId) {
-        throw new Error("Stored withdrawal idempotency response is incomplete");
+        throw new Error("Withdrawal request is still being finalized; retry with the same idempotency key");
       }
       return {
         withdrawalId: body.withdrawalId,
@@ -103,35 +96,28 @@ export async function createWithdrawalRequest(
         amount: String(body.amount ?? amount),
         assetId: String(body.assetId ?? input.assetId),
         destination: String(body.destination ?? destination),
-        transactionId: body.transactionId,
+        transactionId: String(body.transactionId),
         idempotent: true
       };
     }
 
-    const pendingRows = await tx
-      .select({
-        id: ledgerAccounts.id,
-        userId: ledgerAccounts.userId,
-        assetId: ledgerAccounts.assetId,
-        accountType: ledgerAccounts.accountType
-      })
-      .from(ledgerAccounts)
-      .where(
-        and(
-          eq(ledgerAccounts.userId, input.userId),
-          eq(ledgerAccounts.assetId, input.assetId),
-          eq(ledgerAccounts.accountType, "USER_PENDING_WITHDRAWAL")
-        )
-      )
-      .limit(1);
+    const accounts = await tx.select({
+      id: ledgerAccounts.id,
+      accountType: ledgerAccounts.accountType
+    }).from(ledgerAccounts).where(and(
+      eq(ledgerAccounts.userId, input.userId),
+      eq(ledgerAccounts.assetId, input.assetId),
+      inArray(ledgerAccounts.accountType, ["USER_AVAILABLE", "USER_LOCKED", "USER_PENDING_WITHDRAWAL"])
+    ));
 
-    const pending = pendingRows[0];
-    if (!pending) {
-      throw new Error("Required USER_PENDING_WITHDRAWAL ledger account does not exist");
+    const available = accounts.find((a) => a.accountType === "USER_AVAILABLE");
+    const locked = accounts.find((a) => a.accountType === "USER_LOCKED");
+    const pending = accounts.find((a) => a.accountType === "USER_PENDING_WITHDRAWAL");
+    if (!available || !locked || !pending) {
+      throw new Error("Required withdrawal ledger accounts do not exist");
     }
 
     const withdrawalId = randomUUID();
-
     await tx.insert(withdrawals).values({
       id: withdrawalId,
       userId: input.userId,
@@ -142,7 +128,28 @@ export async function createWithdrawalRequest(
       destination
     });
 
-    const lockResult = await requestWithdrawalAtomically(tx as TradeSharkDatabase, withdrawalId);
+    const lockKey = `withdrawal:${withdrawalId}:lock`;
+    const lockResult = await postJournalInTransaction(tx, {
+      transactionId: randomUUID(),
+      idempotencyKey: lockKey,
+      referenceType: "withdrawal_lock",
+      referenceId: withdrawalId,
+      entries: [
+        { accountId: available.id, direction: "debit", amount },
+        { accountId: locked.id, direction: "credit", amount }
+      ]
+    });
+
+    const updated = await tx.update(withdrawals).set({
+      status: "pending",
+      updatedAt: new Date()
+    }).where(and(eq(withdrawals.id, withdrawalId), eq(withdrawals.status, "requested")))
+      .returning({ id: withdrawals.id });
+
+    if (updated.length !== 1) {
+      throw new Error("Withdrawal lifecycle changed while funds were being locked");
+    }
+
     const responseBody: CreateWithdrawalRequestResult = {
       withdrawalId,
       status: "pending",
@@ -160,7 +167,7 @@ export async function createWithdrawalRequest(
       requestHash,
       responseStatus: 201,
       responseBody,
-      expiresAt
+      expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000)
     });
 
     return responseBody;
