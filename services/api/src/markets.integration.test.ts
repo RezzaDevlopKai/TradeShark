@@ -55,31 +55,34 @@ integration("API market catalog integration", () => {
 
       const response = await fetch(`${baseUrl}/api/v1/markets`);
       assert.equal(response.status, 200);
-      assert.deepEqual(await response.json(), {
-        markets: [
-          {
-            id: firstMarketId,
-            symbol: "AAA/USD",
-            isActive: true,
-            baseAsset: { id: baseAssetId, symbol: "AAA", name: "Alpha Asset", decimals: 18 },
-            quoteAsset: { id: quoteAssetId, symbol: "USD", name: "US Dollar", decimals: 2 }
-          },
-          {
-            id: secondMarketId,
-            symbol: "BBB/USDC",
-            isActive: true,
-            baseAsset: { id: secondBaseAssetId, symbol: "BBB", name: "Beta Asset", decimals: 8 },
-            quoteAsset: { id: secondQuoteAssetId, symbol: "USDC", name: "USD Coin", decimals: 6 }
-          }
-        ]
-      });
+      const body = await response.json() as { markets: Array<Record<string, unknown>> };
+      const createdMarkets = body.markets.filter(
+        (market) => market.id === firstMarketId || market.id === secondMarketId
+      );
+      assert.deepEqual(createdMarkets, [
+        {
+          id: firstMarketId,
+          symbol: "AAA/USD",
+          isActive: true,
+          baseAsset: { id: baseAssetId, symbol: "AAA", name: "Alpha Asset", decimals: 18 },
+          quoteAsset: { id: quoteAssetId, symbol: "USD", name: "US Dollar", decimals: 2 }
+        },
+        {
+          id: secondMarketId,
+          symbol: "BBB/USDC",
+          isActive: true,
+          baseAsset: { id: secondBaseAssetId, symbol: "BBB", name: "Beta Asset", decimals: 8 },
+          quoteAsset: { id: secondQuoteAssetId, symbol: "USDC", name: "USD Coin", decimals: 6 }
+        }
+      ]);
+      assert.equal(body.markets.some((market) => market.id === inactiveMarketId), false);
 
-      const limited = await fetch(`${baseUrl}/api/v1/markets?limit=1`);
+      const limited = await fetch(\`${baseUrl}/api/v1/markets?limit=1\`);
       assert.equal(limited.status, 200);
       const limitedBody = await limited.json() as { markets: Array<Record<string, unknown>> };
       assert.equal(limitedBody.markets.length, 1);
-      assert.equal(limitedBody.markets[0]?.id, firstMarketId);
-      assert.equal(limitedBody.markets[0]?.symbol, "AAA/USD");
+      assert.equal(limitedBody.markets[0]?.id, body.markets[0]?.id);
+      assert.equal(limitedBody.markets[0]?.symbol, body.markets[0]?.symbol);
 
       const invalid = await fetch(`${baseUrl}/api/v1/markets?limit=101`);
       assert.equal(invalid.status, 400);

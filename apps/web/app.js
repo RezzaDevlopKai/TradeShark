@@ -21,25 +21,6 @@ function setStatus(state, label) {
   statusLabel.textContent = label;
 }
 
-async function loadPlatformStatus() {
-  if (!status || !statusLabel) return;
-
-  const controller = new AbortController();
-  const timeout = window.setTimeout(() => controller.abort(), 3500);
-
-  try {
-    const platform = await fetchPlatformStatus(controller.signal);
-    setStatus(
-      platform.status === "operational" ? "online" : "degraded",
-      platform.status === "operational" ? "CORE ONLINE" : "CORE DEGRADED"
-    );
-  } catch {
-    setStatus("standby", "CORE STANDBY");
-  } finally {
-    window.clearTimeout(timeout);
-  }
-}
-
 async function loadTerminalMarket() {
   const page = document.querySelector("[data-trading-terminal]");
   if (!page) return;
@@ -98,8 +79,8 @@ function renderTerminalMarket(market, orderBook, trades) {
 
   const asks = document.querySelector("[data-order-asks]");
   const bids = document.querySelector("[data-order-bids]");
-  if (asks) asks.replaceChildren(...orderBook.asks.map((row) => createBookRow(row, "ask", quote)));
-  if (bids) bids.replaceChildren(...orderBook.bids.map((row) => createBookRow(row, "bid", quote)));
+  if (asks) asks.replaceChildren(...orderBook.asks.map((row) => createBookRow(row, "ask", base, quote)));
+  if (bids) bids.replaceChildren(...orderBook.bids.map((row) => createBookRow(row, "bid", base, quote)));
 
   const recent = document.querySelector("[data-recent-trades]");
   if (recent) recent.replaceChildren(...trades.map((trade) => createTradeRow(trade)));
@@ -108,21 +89,11 @@ function renderTerminalMarket(market, orderBook, trades) {
   if (marketState) marketState.textContent = "LIVE MARKET DATA";
 }
 
-function createBookRow(row, side, quote) {
+function createBookRow(row, side, base, quote) {
   const element = document.createElement("div");
   element.className = `book-row ${side}`;
   const total = Number(row.price) * Number(row.quantity);
-
-  for (const value of [
-    numberText(row.price, 8),
-    numberText(row.quantity, 8),
-    Number.isFinite(total) ? `${numberText(total, 2)} ${quote}` : "—"
-  ]) {
-    const span = document.createElement("span");
-    span.textContent = value;
-    element.appendChild(span);
-  }
-
+  element.innerHTML = `<span>${numberText(row.price, 8)}</span><span>${numberText(row.quantity, 8)}</span><span>${Number.isFinite(total) ? numberText(total, 2) : "—"} ${quote}</span>`;
   return element;
 }
 
@@ -130,20 +101,8 @@ function createTradeRow(trade) {
   const element = document.createElement("div");
   element.className = "trade-row";
   const timestamp = trade.createdAt ?? trade.executedAt ?? trade.timestamp ?? null;
-  const time = timestamp
-    ? new Date(timestamp).toLocaleTimeString("en-US", { hour12: false })
-    : "—";
-
-  for (const value of [
-    numberText(trade.price, 8),
-    numberText(trade.quantity, 8),
-    time
-  ]) {
-    const span = document.createElement("span");
-    span.textContent = value;
-    element.appendChild(span);
-  }
-
+  const time = timestamp ? new Date(timestamp).toLocaleTimeString("en-US", { hour12: false }) : "—";
+  element.innerHTML = `<span>${numberText(trade.price, 8)}</span><span>${numberText(trade.quantity, 8)}</span><span>${time}</span>`;
   return element;
 }
 
@@ -152,6 +111,19 @@ function setText(selector, value) {
   if (element) element.textContent = value;
 }
 
+const controller = new AbortController();
+const timeout = window.setTimeout(() => controller.abort(), 3500);
+
+try {
+  const platform = await fetchPlatformStatus(controller.signal);
+  setStatus(platform.status === "operational" ? "online" : "degraded", platform.status === "operational" ? "CORE ONLINE" : "CORE DEGRADED");
+} catch {
+  setStatus("standby", "CORE STANDBY");
+} finally {
+  window.clearTimeout(timeout);
+}
+
+await loadTerminalMarket();
 async function loadMarketList() {
   const list = document.querySelector("[data-market-list]");
   if (!list) return;
@@ -176,43 +148,20 @@ async function loadMarketList() {
 function createMarketRow(market, index) {
   const row = document.createElement("article");
   row.className = "market-row";
-
   const symbol = market.symbol.replace("-", " / ");
   const base = market.baseAsset?.symbol ?? symbol.split(" / ")[0] ?? "TS";
   const quote = market.quoteAsset?.symbol ?? symbol.split(" / ")[1] ?? "";
-
-  const rank = document.createElement("span");
-  rank.className = "rank";
-  rank.textContent = String(index + 1).padStart(2, "0");
-
-  const icon = document.createElement("div");
-  icon.className = "coin-icon";
-  icon.textContent = base.slice(0, 1);
-
-  const name = document.createElement("div");
-  name.className = "coin-name";
-  const nameStrong = document.createElement("b");
-  nameStrong.textContent = symbol;
-  const nameSmall = document.createElement("small");
-  nameSmall.textContent = market.baseAsset?.name ?? base;
-  name.append(nameStrong, nameSmall);
-
-  const price = document.createElement("b");
-  price.textContent = "—";
-
-  const change = document.createElement("span");
-  change.textContent = "—";
-
-  const bars = document.createElement("div");
-  bars.className = "mini-bars";
-  for (let i = 0; i < 5; i += 1) bars.appendChild(document.createElement("i"));
-
-  row.append(rank, icon, name, price, change, bars);
-  row.dataset.marketId = market.id;
+  row.innerHTML = `
+    <span class="rank">${String(index + 1).padStart(2, "0")}</span>
+    <div class="coin-icon">${base.slice(0, 1)}</div>
+    <div class="coin-name"><b>${symbol}</b><small>${market.baseAsset?.name ?? base}</small></div>
+    <b>—</b><span>—</span>
+    <div class="mini-bars"><i></i><i></i><i></i><i></i><i></i></div>
+  `;
+  row.setAttribute("data-market-id", market.id);
   row.title = `${symbol} · quote ${quote}`;
   return row;
 }
 
-await loadPlatformStatus();
-await loadTerminalMarket();
 await loadMarketList();
+

@@ -1,5 +1,4 @@
 User-agent: *
 Allow: /
-Disallow: /admin.html
 
-Sitemap: https://RezzaDevlopKai.github.io/TradeShark/sitemap.xml
+Sitemap: https://tradeshark.app/sitemap.xml
