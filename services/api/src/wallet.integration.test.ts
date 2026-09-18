@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
-import { afterAll, describe, it } from "vitest";
+import { after, describe, it } from "node:test";
 import { createDatabase } from "@tradeshark/database";
 import { IdentityService } from "@tradeshark/identity";
 import { confirmDepositAtomically, creditDepositAtomically } from "@tradeshark/wallet";
@@ -11,7 +11,7 @@ const integration = databaseUrl ? describe : describe.skip;
 const database = databaseUrl ? createDatabase(databaseUrl) : null;
 
 integration("API wallet integration", () => {
-  afterAll(async () => {
+  after(async () => {
     await database?.pool.end();
   });
 
